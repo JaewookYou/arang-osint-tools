@@ -469,6 +469,7 @@ REPORT_TEMPLATE = """
                 <button class="tab-btn active" onclick="showTab('overview')">📊 Overview</button>
                 <button class="tab-btn" onclick="showTab('hosts')">🖥️ Hosts ({{ stats.alive_hosts }})</button>
                 <button class="tab-btn" onclick="showTab('tech')">🔧 Tech Stack ({{ tech_results|length }})</button>
+                <button class="tab-btn" onclick="showTab('cves')">🔥 CVEs ({{ cve_results|length }})</button>
                 <button class="tab-btn" onclick="showTab('ports')">🔌 Ports ({{ stats.open_ports }})</button>
                 <button class="tab-btn" onclick="showTab('paths')">📁 Paths ({{ stats.discovered_paths }})</button>
                 <button class="tab-btn" onclick="showTab('vulns')">⚠️ Vulns ({{ stats.vulnerabilities }})</button>
@@ -664,6 +665,56 @@ REPORT_TEMPLATE = """
                 
                 {% if not tech_results %}
                 <p class="empty-state">기술 스택 정보가 없습니다.</p>
+                {% endif %}
+            </div>
+            
+            <!-- CVEs Tab -->
+            <div id="cves" class="tab-content">
+                <h2>🔥 알려진 취약점 (CVE)</h2>
+                <div class="controls">
+                    <div class="search-box">
+                        <input type="text" id="cve-search" placeholder="CVE 검색..." onkeyup="filterTable('cves-table', 'cve-search')">
+                    </div>
+                    <select class="filter-select" onchange="filterCVEBySeverity(this.value)">
+                        <option value="">모든 심각도</option>
+                        <option value="critical">Critical (9.0+)</option>
+                        <option value="high">High (7.0-8.9)</option>
+                        <option value="medium">Medium (4.0-6.9)</option>
+                        <option value="low">Low (0.1-3.9)</option>
+                    </select>
+                </div>
+                
+                {% if cve_results %}
+                <table class="data-table" id="cves-table">
+                    <thead>
+                        <tr>
+                            <th>CVE ID</th>
+                            <th>제품</th>
+                            <th>CVSS</th>
+                            <th>심각도</th>
+                            <th>발견 위치</th>
+                            <th>설명</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for cve in cve_results %}
+                        <tr data-severity="{{ cve.severity }}">
+                            <td><a href="{{ cve.url }}" target="_blank">{{ cve.cve_id }}</a></td>
+                            <td><strong>{{ cve.product }}</strong>{% if cve.version %} {{ cve.version }}{% endif %}</td>
+                            <td>{{ cve.cvss_score or '-' }}</td>
+                            <td>
+                                <span class="badge {{ 'badge-danger' if cve.severity in ['critical', 'high'] else 'badge-warning' if cve.severity == 'medium' else 'badge-info' }}">
+                                    {{ cve.severity|upper }}
+                                </span>
+                            </td>
+                            <td style="font-size: 0.85rem;">{{ cve.detected_on }}</td>
+                            <td style="font-size: 0.85rem; max-width: 300px;">{{ cve.description[:150] }}{% if cve.description|length > 150 %}...{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="empty-state">발견된 CVE가 없습니다. ✅</p>
                 {% endif %}
             </div>
             
@@ -934,6 +985,18 @@ REPORT_TEMPLATE = """
             });
         }
         
+        // Filter CVE by severity
+        function filterCVEBySeverity(severity) {
+            const rows = document.querySelectorAll('#cves-table tbody tr');
+            rows.forEach(row => {
+                if (!severity || row.dataset.severity === severity) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+        
         // Modal
         function openModal(src) {
             document.getElementById('modalImage').src = src;
@@ -1061,6 +1124,7 @@ def generate_report(state: ScanState) -> dict:
             web_servers=state.get('web_servers', []),
             hosts_data=hosts_data,
             tech_results=state.get('tech_results', []),
+            cve_results=state.get('cve_results', []),
             open_ports=state.get('open_ports', []),
             discovered_paths=state.get('discovered_paths', []),
             vulnerabilities=state.get('vulnerabilities', []),

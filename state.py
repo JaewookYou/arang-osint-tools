@@ -55,6 +55,19 @@ class TechDetectionResult(TypedDict):
     headers: Dict[str, str]
 
 
+class CVEResult(TypedDict):
+    """CVE lookup result"""
+    cve_id: str
+    description: str
+    cvss_score: Optional[float]
+    severity: str
+    published: str
+    url: str
+    product: str
+    version: Optional[str]
+    detected_on: str
+
+
 class ScanState(TypedDict):
     """
     Main state schema for the scanning pipeline.
@@ -81,6 +94,9 @@ class ScanState(TypedDict):
     
     # === Technology Detection ===
     tech_results: Annotated[List[TechDetectionResult], operator.add]  # Technology stack info
+    
+    # === CVE Lookup ===
+    cve_results: Annotated[List[CVEResult], operator.add]  # Known CVEs for technologies
     
     # === Screenshots ===
     screenshots: Annotated[List[ScreenshotResult], operator.add]  # Captured screenshots
@@ -112,6 +128,7 @@ def create_initial_state(input_file: str) -> ScanState:
         open_ports=[],
         web_servers=[],
         tech_results=[],
+        cve_results=[],
         screenshots=[],
         discovered_paths=[],
         vulnerabilities=[],

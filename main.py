@@ -28,6 +28,7 @@ from nodes import (
     discover_hosts,
     scan_ports,
     detect_tech,
+    lookup_cves,
     take_screenshots,
     scan_directories,
     run_nuclei
@@ -69,6 +70,7 @@ def build_workflow() -> StateGraph:
     workflow.add_node("discover_hosts", discover_hosts)
     workflow.add_node("scan_ports", scan_ports)
     workflow.add_node("detect_tech", detect_tech)
+    workflow.add_node("lookup_cves", lookup_cves)
     workflow.add_node("take_screenshots", take_screenshots)
     workflow.add_node("scan_directories", scan_directories)
     workflow.add_node("run_nuclei", run_nuclei)
@@ -90,10 +92,11 @@ def build_workflow() -> StateGraph:
     workflow.add_edge("scan_subdomains", "discover_hosts")
     workflow.add_edge("discover_hosts", "scan_ports")
     workflow.add_edge("scan_ports", "detect_tech")  # 포트스캔 후 기술 탐지
+    workflow.add_edge("detect_tech", "lookup_cves")  # 기술 탐지 후 CVE 검색
     
-    # 기술 탐지 후 디렉터리 스캔
+    # CVE 검색 후 디렉터리 스캔
     workflow.add_conditional_edges(
-        "detect_tech",
+        "lookup_cves",
         should_scan_directories,
         {
             "scan_directories": "scan_directories",

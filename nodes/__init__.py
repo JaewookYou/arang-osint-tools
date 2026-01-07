@@ -4,6 +4,7 @@ from .subdomain_scanner import run as scan_subdomains
 from .host_discovery import run as discover_hosts
 from .port_scanner import run as scan_ports
 from .tech_detector import run as detect_tech
+from .cve_lookup import run as lookup_cves
 from .web_screenshot import run as take_screenshots
 from .directory_scanner import run as scan_directories
 from .nuclei_scanner import run as run_nuclei
@@ -14,6 +15,7 @@ __all__ = [
     'discover_hosts',
     'scan_ports',
     'detect_tech',
+    'lookup_cves',
     'take_screenshots',
     'scan_directories',
     'run_nuclei'
