@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Local tools (built from source)
+tools/bin/
+tools/repos/
+
+# Output
+output/
+reports/
+*.html
+!data/**/*.html
+
+# Screenshots
+screenshots/
+*.png
+*.jpg
+*.jpeg
+
+# Logs
+*.log
+logs/
+
+# Temp files
+*.tmp
+*.temp
+.cache/
+
+# Environment
+.env
+.env.local
+*.env
+
+# Test files
+test_*.txt
+!example_targets.txt
+
+# Dirsearch reports
+reports/
+
+# Nuclei results
+*.json
+!data/**/*.json
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride

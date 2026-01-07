@@ -1,0 +1,32 @@
+id: git-config-exposure
+
+info:
+  name: Git Config File Exposure
+  author: Red Iris
+  severity: medium
+  description: Detects exposed .git/config files which may leak sensitive repository information
+  tags: git,config,exposure
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.git/config"
+    
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "[core]"
+          - "[remote"
+        condition: or
+      
+      - type: status
+        status:
+          - 200
+      
+      - type: word
+        part: header
+        words:
+          - "text/plain"
+          - "application/octet-stream"
+        condition: or

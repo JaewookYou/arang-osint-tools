@@ -1,0 +1,48 @@
+id: spring-actuator-exposure
+
+info:
+  name: Spring Boot Actuator Exposure
+  author: Red Iris
+  severity: high
+  description: Detects exposed Spring Boot Actuator endpoints which may leak sensitive application information
+  tags: spring,actuator,java,exposure
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/actuator"
+      - "{{BaseURL}}/actuator/health"
+      - "{{BaseURL}}/actuator/env"
+      - "{{BaseURL}}/actuator/configprops"
+      - "{{BaseURL}}/actuator/mappings"
+      - "{{BaseURL}}/actuator/beans"
+      - "{{BaseURL}}/actuator/heapdump"
+    
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "\"_links\""
+          - "\"status\""
+          - "\"propertySources\""
+          - "\"contexts\""
+          - "\"dispatcherServlets\""
+        condition: or
+      
+      - type: status
+        status:
+          - 200
+      
+      - type: word
+        part: header
+        words:
+          - "application/json"
+          - "application/vnd.spring-boot.actuator"
+        condition: or
+
+    extractors:
+      - type: regex
+        name: sensitive-properties
+        group: 0
+        regex:
+          - "\"(password|secret|key|token|credential)[^\"]*\"\\s*:\\s*\"[^\"]+\""

@@ -1,0 +1,52 @@
+id: phpinfo-exposure
+
+info:
+  name: PHPInfo Page Exposure
+  author: Red Iris
+  severity: medium
+  description: Detects exposed phpinfo() pages which reveal sensitive server configuration
+  tags: php,phpinfo,exposure,config
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/phpinfo.php"
+      - "{{BaseURL}}/info.php"
+      - "{{BaseURL}}/php_info.php"
+      - "{{BaseURL}}/test.php"
+      - "{{BaseURL}}/i.php"
+      - "{{BaseURL}}/pi.php"
+    
+    stop-at-first-match: true
+    
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "PHP Version"
+          - "phpinfo()"
+          - "PHP Credits"
+        condition: or
+      
+      - type: word
+        words:
+          - "Configuration"
+          - "PHP Variables"
+        condition: or
+      
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: regex
+        name: php-version
+        group: 1
+        regex:
+          - "PHP Version\\s*</td><td[^>]*>([0-9.]+)"
+      
+      - type: regex
+        name: server-root
+        group: 1
+        regex:
+          - "DOCUMENT_ROOT\\s*</td><td[^>]*>([^<]+)"

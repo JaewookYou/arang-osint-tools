@@ -1,0 +1,139 @@
+# Red Iris Info Gather - Custom Endpoints
+# 커스텀 디렉터리 스캔용 엔드포인트 목록
+# dirsearch 기본 목록에 추가로 스캔할 경로들
+
+# Git/SVN 관련
+.git/config
+.git/HEAD
+.git/logs/HEAD
+.svn/entries
+.svn/wc.db
+
+# 환경 설정 파일
+.env
+.env.local
+.env.production
+.env.development
+.env.backup
+.env.bak
+.env.old
+config.php
+config.inc.php
+configuration.php
+settings.php
+wp-config.php
+wp-config.php.bak
+wp-config.php.old
+
+# API 문서
+api/swagger.json
+api/swagger.yaml
+swagger.json
+swagger.yaml
+swagger-ui.html
+api-docs
+api/v1/swagger.json
+api/v2/swagger.json
+openapi.json
+openapi.yaml
+graphql
+graphiql
+
+# 관리자 페이지
+admin
+administrator
+admin.php
+admin/login
+admin/dashboard
+manager
+manage
+panel
+cpanel
+webadmin
+siteadmin
+wp-admin
+wp-login.php
+
+# 백업 파일
+backup
+backup.sql
+backup.zip
+backup.tar.gz
+db.sql
+database.sql
+dump.sql
+site.zip
+www.zip
+web.zip
+backup.bak
+
+# 개발/디버그
+debug
+debug.php
+phpinfo.php
+info.php
+test.php
+test
+dev
+development
+staging
+.DS_Store
+Thumbs.db
+
+# Spring Boot Actuator
+actuator
+actuator/health
+actuator/info
+actuator/env
+actuator/mappings
+actuator/beans
+actuator/configprops
+actuator/metrics
+actuator/dump
+actuator/trace
+actuator/heapdump
+
+# 기타 민감 정보
+.htaccess
+.htpasswd
+web.config
+crossdomain.xml
+clientaccesspolicy.xml
+robots.txt
+sitemap.xml
+security.txt
+.well-known/security.txt
+humans.txt
+readme.html
+readme.txt
+CHANGELOG.md
+CHANGELOG.txt
+LICENSE
+VERSION
+version.txt
+
+# 로그 파일
+logs
+log
+error.log
+access.log
+debug.log
+app.log
+application.log
+
+# 컨테이너/배포
+.docker/config.json
+docker-compose.yml
+docker-compose.yaml
+Dockerfile
+.dockerignore
+kubernetes
+k8s
+helm
+
+# Cloud 설정
+.aws/credentials
+.aws/config
+.azure
+.gcp
+firebase.json

@@ -1,0 +1,45 @@
+id: env-file-exposure
+
+info:
+  name: Environment File Exposure
+  author: Red Iris
+  severity: high
+  description: Detects exposed .env files which may contain sensitive environment variables and credentials
+  tags: env,config,exposure,credentials
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.env"
+      - "{{BaseURL}}/.env.local"
+      - "{{BaseURL}}/.env.production"
+      - "{{BaseURL}}/.env.development"
+      - "{{BaseURL}}/.env.backup"
+    
+    stop-at-first-match: true
+    
+    matchers-condition: and
+    matchers:
+      - type: regex
+        regex:
+          - "(?i)(password|passwd|pwd|secret|api_key|apikey|token|auth|database|db_|mysql|postgres|redis|aws|azure|gcp)\\s*[=:]"
+      
+      - type: status
+        status:
+          - 200
+      
+      - type: word
+        part: header
+        words:
+          - "text/plain"
+          - "application/octet-stream"
+          - "text/html"
+        condition: or
+        negative: false
+
+    extractors:
+      - type: regex
+        name: credentials
+        group: 0
+        regex:
+          - "(?i)(password|passwd|secret|api_key|token)\\s*[=:]\\s*['\"]?[^\\s'\"]+['\"]?"

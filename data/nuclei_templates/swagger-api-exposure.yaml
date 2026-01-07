@@ -1,0 +1,46 @@
+id: swagger-api-exposure
+
+info:
+  name: Swagger API Documentation Exposure
+  author: Red Iris
+  severity: low
+  description: Detects exposed Swagger/OpenAPI documentation which may reveal API endpoints and data structures
+  tags: swagger,api,documentation,exposure
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/swagger.json"
+      - "{{BaseURL}}/swagger.yaml"
+      - "{{BaseURL}}/api/swagger.json"
+      - "{{BaseURL}}/api/swagger.yaml"
+      - "{{BaseURL}}/swagger-ui.html"
+      - "{{BaseURL}}/api-docs"
+      - "{{BaseURL}}/v1/swagger.json"
+      - "{{BaseURL}}/v2/swagger.json"
+      - "{{BaseURL}}/v3/swagger.json"
+      - "{{BaseURL}}/openapi.json"
+      - "{{BaseURL}}/openapi.yaml"
+    
+    stop-at-first-match: true
+    
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "swagger"
+          - "openapi"
+          - "\"paths\""
+          - "\"info\""
+        condition: or
+      
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: regex
+        name: api-version
+        group: 1
+        regex:
+          - "\"(?:swagger|openapi)\"\\s*:\\s*\"([^\"]+)\""

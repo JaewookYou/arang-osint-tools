@@ -1,0 +1,36 @@
+# Red Iris Info Gather - Python Dependencies
+
+# LangGraph & LangChain
+langgraph>=0.2.0
+langchain>=0.3.0
+langchain-core>=0.3.0
+
+# Domain parsing
+tldextract>=5.0.0
+
+# Network scanning
+python-nmap>=0.7.1
+ipaddress
+
+# Web automation & screenshots
+selenium>=4.15.0
+webdriver-manager>=4.0.0
+
+# HTTP utilities
+aiohttp>=3.9.0
+requests>=2.31.0
+
+# Shodan API (optional)
+shodan>=1.28.0
+
+# Templating for reports
+Jinja2>=3.1.0
+
+# CLI utilities
+click>=8.1.0
+
+# Sublist3r (subdomain enumeration)
+sublist3r
+
+# Dirsearch (directory scanning)
+dirsearch
