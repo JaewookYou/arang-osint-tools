@@ -468,6 +468,7 @@ REPORT_TEMPLATE = """
             <div class="tab-list">
                 <button class="tab-btn active" onclick="showTab('overview')">📊 Overview</button>
                 <button class="tab-btn" onclick="showTab('hosts')">🖥️ Hosts ({{ stats.alive_hosts }})</button>
+                <button class="tab-btn" onclick="showTab('tech')">🔧 Tech Stack ({{ tech_results|length }})</button>
                 <button class="tab-btn" onclick="showTab('ports')">🔌 Ports ({{ stats.open_ports }})</button>
                 <button class="tab-btn" onclick="showTab('paths')">📁 Paths ({{ stats.discovered_paths }})</button>
                 <button class="tab-btn" onclick="showTab('vulns')">⚠️ Vulns ({{ stats.vulnerabilities }})</button>
@@ -572,6 +573,97 @@ REPORT_TEMPLATE = """
                 
                 {% if not hosts_data %}
                 <p class="empty-state">발견된 호스트가 없습니다.</p>
+                {% endif %}
+            </div>
+            
+            <!-- Tech Stack Tab -->
+            <div id="tech" class="tab-content">
+                <h2>🔧 기술 스택 분석</h2>
+                <div class="controls">
+                    <div class="search-box">
+                        <input type="text" id="tech-search" placeholder="기술 검색..." onkeyup="filterTechCards()">
+                    </div>
+                </div>
+                
+                {% for tech_result in tech_results %}
+                <div class="host-card" data-host="{{ tech_result.url }}">
+                    <div class="host-header" onclick="toggleHost(this)">
+                        <h3>{{ tech_result.url }}</h3>
+                        <span class="badge badge-info">{{ tech_result.technologies|length }} technologies</span>
+                    </div>
+                    <div class="host-body">
+                        {% if tech_result.server %}
+                        <p><strong>Server:</strong> {{ tech_result.server }}</p>
+                        {% endif %}
+                        {% if tech_result.powered_by %}
+                        <p><strong>X-Powered-By:</strong> {{ tech_result.powered_by }}</p>
+                        {% endif %}
+                        
+                        {% if tech_result.technologies %}
+                        <h4 style="margin-top: 15px;">탐지된 기술</h4>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>기술</th>
+                                    <th>카테고리</th>
+                                    <th>버전</th>
+                                    <th>소스</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for tech in tech_result.technologies %}
+                                <tr>
+                                    <td><strong>{{ tech.name }}</strong></td>
+                                    <td><span class="badge badge-info">{{ tech.category }}</span></td>
+                                    <td>{{ tech.version or '-' }}</td>
+                                    <td>{{ tech.source }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        {% endif %}
+                        
+                        {% if tech_result.ssl_info and tech_result.ssl_info.issuer %}
+                        <h4 style="margin-top: 15px;">SSL 정보</h4>
+                        <div style="background: var(--bg-tertiary); padding: 10px; border-radius: 6px; font-size: 0.9rem;">
+                            <p><strong>발급자:</strong> {{ tech_result.ssl_info.issuer.organizationName or 'N/A' }}</p>
+                            {% if tech_result.ssl_info.not_after %}
+                            <p><strong>만료일:</strong> {{ tech_result.ssl_info.not_after }}</p>
+                            {% endif %}
+                            {% if tech_result.ssl_info.cipher %}
+                            <p><strong>암호:</strong> {{ tech_result.ssl_info.cipher.name }} ({{ tech_result.ssl_info.cipher.bits }} bits)</p>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                        
+                        {% if tech_result.shodan_info and tech_result.shodan_info.org %}
+                        <h4 style="margin-top: 15px;">Shodan 정보</h4>
+                        <div style="background: var(--bg-tertiary); padding: 10px; border-radius: 6px; font-size: 0.9rem;">
+                            <p><strong>조직:</strong> {{ tech_result.shodan_info.org }}</p>
+                            {% if tech_result.shodan_info.isp %}
+                            <p><strong>ISP:</strong> {{ tech_result.shodan_info.isp }}</p>
+                            {% endif %}
+                            {% if tech_result.shodan_info.country %}
+                            <p><strong>위치:</strong> {{ tech_result.shodan_info.city or '' }} {{ tech_result.shodan_info.country }}</p>
+                            {% endif %}
+                            {% if tech_result.shodan_info.os %}
+                            <p><strong>OS:</strong> {{ tech_result.shodan_info.os }}</p>
+                            {% endif %}
+                            {% if tech_result.shodan_info.vulns %}
+                            <p><strong>알려진 취약점:</strong> 
+                                {% for vuln in tech_result.shodan_info.vulns[:5] %}
+                                <span class="badge badge-danger">{{ vuln }}</span>
+                                {% endfor %}
+                            </p>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+                
+                {% if not tech_results %}
+                <p class="empty-state">기술 스택 정보가 없습니다.</p>
                 {% endif %}
             </div>
             
@@ -833,6 +925,15 @@ REPORT_TEMPLATE = """
             });
         }
         
+        // Filter tech cards
+        function filterTechCards() {
+            const query = document.getElementById('tech-search').value.toLowerCase();
+            document.querySelectorAll('#tech .host-card').forEach(card => {
+                const text = card.textContent.toLowerCase();
+                card.style.display = text.includes(query) ? 'block' : 'none';
+            });
+        }
+        
         // Modal
         function openModal(src) {
             document.getElementById('modalImage').src = src;
@@ -959,6 +1060,7 @@ def generate_report(state: ScanState) -> dict:
             subdomains=state.get('subdomains', []),
             web_servers=state.get('web_servers', []),
             hosts_data=hosts_data,
+            tech_results=state.get('tech_results', []),
             open_ports=state.get('open_ports', []),
             discovered_paths=state.get('discovered_paths', []),
             vulnerabilities=state.get('vulnerabilities', []),

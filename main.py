@@ -27,6 +27,7 @@ from nodes import (
     scan_subdomains,
     discover_hosts,
     scan_ports,
+    detect_tech,
     take_screenshots,
     scan_directories,
     run_nuclei
@@ -67,6 +68,7 @@ def build_workflow() -> StateGraph:
     workflow.add_node("scan_subdomains", scan_subdomains)
     workflow.add_node("discover_hosts", discover_hosts)
     workflow.add_node("scan_ports", scan_ports)
+    workflow.add_node("detect_tech", detect_tech)
     workflow.add_node("take_screenshots", take_screenshots)
     workflow.add_node("scan_directories", scan_directories)
     workflow.add_node("run_nuclei", run_nuclei)
@@ -87,10 +89,11 @@ def build_workflow() -> StateGraph:
     
     workflow.add_edge("scan_subdomains", "discover_hosts")
     workflow.add_edge("discover_hosts", "scan_ports")
+    workflow.add_edge("scan_ports", "detect_tech")  # 포트스캔 후 기술 탐지
     
-    # 포트스캔 후 병렬 처리 (스크린샷 + 디렉터리 스캔)
+    # 기술 탐지 후 디렉터리 스캔
     workflow.add_conditional_edges(
-        "scan_ports",
+        "detect_tech",
         should_scan_directories,
         {
             "scan_directories": "scan_directories",

@@ -4,7 +4,7 @@ Red Iris Info Gather - LangGraph State Schema
 Defines the shared state structure that flows through all nodes in the pipeline.
 Uses TypedDict with Annotated types for proper state accumulation.
 """
-from typing import TypedDict, List, Optional, Annotated
+from typing import TypedDict, List, Optional, Annotated, Dict, Any
 import operator
 
 
@@ -42,6 +42,19 @@ class NucleiResult(TypedDict):
     extracted_results: Optional[List[str]]
 
 
+class TechDetectionResult(TypedDict):
+    """Technology detection result for a URL"""
+    url: str
+    technologies: List[Dict[str, Any]]  # name, category, version, source
+    server: Optional[str]
+    powered_by: Optional[str]
+    cms: Optional[str]
+    framework: Optional[str]
+    ssl_info: Dict[str, Any]
+    shodan_info: Dict[str, Any]
+    headers: Dict[str, str]
+
+
 class ScanState(TypedDict):
     """
     Main state schema for the scanning pipeline.
@@ -65,6 +78,9 @@ class ScanState(TypedDict):
     # === Port Scan Results ===
     open_ports: Annotated[List[PortScanResult], operator.add]  # Open port details
     web_servers: Annotated[List[str], operator.add]            # HTTP/HTTPS server URLs
+    
+    # === Technology Detection ===
+    tech_results: Annotated[List[TechDetectionResult], operator.add]  # Technology stack info
     
     # === Screenshots ===
     screenshots: Annotated[List[ScreenshotResult], operator.add]  # Captured screenshots
@@ -95,6 +111,7 @@ def create_initial_state(input_file: str) -> ScanState:
         alive_hosts=[],
         open_ports=[],
         web_servers=[],
+        tech_results=[],
         screenshots=[],
         discovered_paths=[],
         vulnerabilities=[],
