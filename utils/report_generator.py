@@ -1,14 +1,17 @@
 """
-Red Iris Info Gather - HTML Report Generator
+Red Iris Info Gather - Report Generator
 
-Generates comprehensive HTML reports from scan results.
-Uses Jinja2 templating for clean, styled output.
+Generates an interactive HTML report with:
+- Tab-based navigation by host/domain
+- Search and filtering functionality
+- Embedded screenshots
+- Vulnerability summary
 """
 import base64
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any
+from collections import defaultdict
 
 from jinja2 import Template
 
@@ -16,8 +19,9 @@ from state import ScanState
 import config
 
 
-# HTML Report Template
-REPORT_TEMPLATE = '''<!DOCTYPE html>
+# Modern HTML template with tabs, search, and filtering
+REPORT_TEMPLATE = """
+<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
@@ -25,17 +29,16 @@ REPORT_TEMPLATE = '''<!DOCTYPE html>
     <title>Red Iris - 정보수집 리포트</title>
     <style>
         :root {
-            --bg-primary: #0a0a0f;
-            --bg-secondary: #12121a;
-            --bg-card: #1a1a25;
-            --text-primary: #e8e8f0;
-            --text-secondary: #8888a0;
-            --accent-red: #ff3366;
-            --accent-blue: #3366ff;
-            --accent-green: #33ff99;
-            --accent-yellow: #ffcc33;
-            --accent-orange: #ff9933;
-            --border-color: #2a2a3a;
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --text-primary: #c9d1d9;
+            --text-secondary: #8b949e;
+            --accent: #f85149;
+            --accent-secondary: #58a6ff;
+            --success: #3fb950;
+            --warning: #d29922;
+            --border: #30363d;
         }
         
         * {
@@ -45,7 +48,7 @@ REPORT_TEMPLATE = '''<!DOCTYPE html>
         }
         
         body {
-            font-family: 'Segoe UI', 'Noto Sans KR', sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
             background: var(--bg-primary);
             color: var(--text-primary);
             line-height: 1.6;
@@ -57,352 +60,578 @@ REPORT_TEMPLATE = '''<!DOCTYPE html>
             padding: 20px;
         }
         
-        header {
-            text-align: center;
-            padding: 40px 0;
-            border-bottom: 1px solid var(--border-color);
-            margin-bottom: 40px;
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border);
         }
         
-        header h1 {
-            font-size: 2.5rem;
-            color: var(--accent-red);
+        .header h1 {
+            color: var(--accent);
+            font-size: 2rem;
             margin-bottom: 10px;
         }
         
-        header .subtitle {
+        .header .meta {
             color: var(--text-secondary);
-            font-size: 1.1rem;
+            font-size: 0.9rem;
         }
         
+        /* Stats Grid */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 40px;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
         }
         
         .stat-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
+            background: var(--bg-secondary);
             padding: 20px;
+            border-radius: 8px;
             text-align: center;
+            border: 1px solid var(--border);
+            transition: transform 0.2s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-2px);
         }
         
         .stat-card .number {
-            font-size: 2.5rem;
+            font-size: 2rem;
             font-weight: bold;
-            color: var(--accent-blue);
+            color: var(--accent-secondary);
         }
         
         .stat-card .label {
             color: var(--text-secondary);
+            font-size: 0.85rem;
             margin-top: 5px;
         }
         
-        .section {
+        /* Tabs */
+        .tabs {
             background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            margin-bottom: 30px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border);
             overflow: hidden;
         }
         
-        .section-header {
-            background: var(--bg-card);
-            padding: 15px 20px;
-            border-bottom: 1px solid var(--border-color);
+        .tab-list {
             display: flex;
-            justify-content: space-between;
-            align-items: center;
+            flex-wrap: wrap;
+            border-bottom: 1px solid var(--border);
         }
         
-        .section-header h2 {
-            font-size: 1.3rem;
-            color: var(--accent-red);
+        .tab-btn {
+            padding: 12px 24px;
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.95rem;
+            transition: all 0.2s;
+            border-bottom: 2px solid transparent;
         }
         
-        .section-header .count {
-            background: var(--accent-blue);
-            color: white;
-            padding: 5px 12px;
-            border-radius: 20px;
-            font-size: 0.9rem;
+        .tab-btn:hover {
+            color: var(--text-primary);
+            background: var(--bg-tertiary);
         }
         
-        .section-content {
+        .tab-btn.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+        
+        .tab-content {
+            display: none;
             padding: 20px;
         }
         
-        table {
+        .tab-content.active {
+            display: block;
+        }
+        
+        /* Search & Filter */
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .search-box {
+            flex: 1;
+            min-width: 250px;
+            position: relative;
+        }
+        
+        .search-box input {
+            width: 100%;
+            padding: 12px 15px 12px 40px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+        }
+        
+        .search-box::before {
+            content: "🔍";
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        
+        .filter-select {
+            padding: 12px 15px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            cursor: pointer;
+        }
+        
+        /* Tables */
+        .data-table {
             width: 100%;
             border-collapse: collapse;
+            margin-top: 15px;
         }
         
-        th, td {
-            padding: 12px;
+        .data-table th, .data-table td {
+            padding: 12px 15px;
             text-align: left;
-            border-bottom: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border);
         }
         
-        th {
-            background: var(--bg-card);
+        .data-table th {
+            background: var(--bg-tertiary);
             color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            letter-spacing: 0.5px;
+        }
+        
+        .data-table tr:hover {
+            background: var(--bg-tertiary);
+        }
+        
+        .data-table a {
+            color: var(--accent-secondary);
+            text-decoration: none;
+        }
+        
+        .data-table a:hover {
+            text-decoration: underline;
+        }
+        
+        /* Badges */
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.75rem;
             font-weight: 600;
         }
         
-        tr:hover {
-            background: var(--bg-card);
+        .badge-success { background: rgba(63, 185, 80, 0.2); color: var(--success); }
+        .badge-warning { background: rgba(210, 153, 34, 0.2); color: var(--warning); }
+        .badge-danger { background: rgba(248, 81, 73, 0.2); color: var(--accent); }
+        .badge-info { background: rgba(88, 166, 255, 0.2); color: var(--accent-secondary); }
+        
+        /* Host Cards */
+        .host-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 15px;
+            overflow: hidden;
         }
         
-        .severity-critical { color: #ff3333; font-weight: bold; }
-        .severity-high { color: var(--accent-orange); font-weight: bold; }
-        .severity-medium { color: var(--accent-yellow); }
-        .severity-low { color: var(--accent-green); }
-        .severity-info { color: var(--accent-blue); }
+        .host-header {
+            padding: 15px 20px;
+            background: var(--bg-tertiary);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+        }
         
-        .status-200 { color: var(--accent-green); }
-        .status-301, .status-302 { color: var(--accent-blue); }
-        .status-403 { color: var(--accent-orange); }
-        .status-500 { color: var(--accent-red); }
+        .host-header h3 {
+            color: var(--accent-secondary);
+            font-size: 1.1rem;
+        }
         
+        .host-body {
+            padding: 20px;
+            display: none;
+        }
+        
+        .host-body.expanded {
+            display: block;
+        }
+        
+        /* Screenshots */
         .screenshots-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 20px;
+            margin-top: 15px;
         }
         
         .screenshot-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
+            background: var(--bg-tertiary);
             border-radius: 8px;
             overflow: hidden;
+            border: 1px solid var(--border);
         }
         
         .screenshot-card img {
             width: 100%;
-            height: 250px;
+            height: 200px;
             object-fit: cover;
-            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: opacity 0.2s;
         }
         
-        .screenshot-card .url {
+        .screenshot-card img:hover {
+            opacity: 0.8;
+        }
+        
+        .screenshot-card .caption {
             padding: 12px;
-            font-size: 0.9rem;
-            word-break: break-all;
-            color: var(--text-secondary);
-        }
-        
-        .log-entry {
-            font-family: 'Consolas', 'Monaco', monospace;
             font-size: 0.85rem;
-            padding: 5px 0;
-            border-bottom: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            word-break: break-all;
         }
         
-        .log-entry:last-child {
-            border-bottom: none;
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
         }
         
-        .error-log {
-            color: var(--accent-red);
+        .modal.active {
+            display: flex;
         }
         
-        .tag {
-            display: inline-block;
-            padding: 3px 8px;
-            border-radius: 4px;
-            font-size: 0.8rem;
-            margin-right: 5px;
+        .modal img {
+            max-width: 90%;
+            max-height: 90%;
         }
         
-        .tag-http { background: #1a4d1a; color: var(--accent-green); }
-        .tag-port { background: #1a1a4d; color: var(--accent-blue); }
-        
-        a {
-            color: var(--accent-blue);
-            text-decoration: none;
-        }
-        
-        a:hover {
-            text-decoration: underline;
-        }
-        
-        .collapsible {
+        .modal-close {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            font-size: 2rem;
+            color: white;
             cursor: pointer;
         }
         
-        .collapsible:after {
-            content: ' ▼';
-            font-size: 0.8rem;
+        /* Severity */
+        .severity-critical { color: #ff4444; }
+        .severity-high { color: #ff8800; }
+        .severity-medium { color: #ffcc00; }
+        .severity-low { color: #00ccff; }
+        .severity-info { color: #888888; }
+        
+        /* Section */
+        .section {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border);
         }
         
-        footer {
+        .section h2 {
+            color: var(--text-primary);
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+        }
+        
+        /* Empty state */
+        .empty-state {
             text-align: center;
             padding: 40px;
             color: var(--text-secondary);
-            border-top: 1px solid var(--border-color);
-            margin-top: 40px;
+        }
+        
+        /* Port list */
+        .port-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        
+        .port-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            font-size: 0.85rem;
+            border: 1px solid var(--border);
+        }
+        
+        .port-badge.http { border-color: var(--success); color: var(--success); }
+        .port-badge.https { border-color: var(--accent-secondary); color: var(--accent-secondary); }
+        
+        /* Logs section */
+        .logs-container {
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            padding: 15px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .log-line {
+            padding: 3px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .tab-btn {
+                padding: 10px 15px;
+                font-size: 0.85rem;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <header>
+        <!-- Header -->
+        <div class="header">
             <h1>🔴 Red Iris Info Gather</h1>
-            <p class="subtitle">정보수집 스캔 리포트 | {{ scan_time }}</p>
-        </header>
+            <div class="meta">
+                <strong>스캔 일시:</strong> {{ scan_date }}<br>
+                <strong>포트 스캔 모드:</strong> {{ port_mode }}
+            </div>
+        </div>
         
-        <!-- Stats Summary -->
+        <!-- Stats -->
         <div class="stats-grid">
             <div class="stat-card">
-                <div class="number">{{ stats.targets }}</div>
-                <div class="label">총 타겟</div>
+                <div class="number">{{ stats.total_targets }}</div>
+                <div class="label">Total Targets</div>
             </div>
             <div class="stat-card">
                 <div class="number">{{ stats.alive_hosts }}</div>
-                <div class="label">활성 호스트</div>
+                <div class="label">Alive Hosts</div>
             </div>
             <div class="stat-card">
                 <div class="number">{{ stats.open_ports }}</div>
-                <div class="label">열린 포트</div>
+                <div class="label">Open Ports</div>
             </div>
             <div class="stat-card">
                 <div class="number">{{ stats.web_servers }}</div>
-                <div class="label">웹 서버</div>
+                <div class="label">Web Servers</div>
             </div>
             <div class="stat-card">
                 <div class="number">{{ stats.discovered_paths }}</div>
-                <div class="label">발견된 경로</div>
+                <div class="label">Paths Found</div>
             </div>
             <div class="stat-card">
-                <div class="number" style="color: {% if stats.vulnerabilities > 0 %}var(--accent-red){% else %}var(--accent-green){% endif %};">{{ stats.vulnerabilities }}</div>
-                <div class="label">취약점</div>
+                <div class="number">{{ stats.vulnerabilities }}</div>
+                <div class="label">Vulnerabilities</div>
             </div>
         </div>
         
-        {% if vulnerabilities %}
-        <!-- Vulnerabilities -->
-        <div class="section">
-            <div class="section-header">
-                <h2>⚠️ 발견된 취약점</h2>
-                <span class="count">{{ vulnerabilities|length }}</span>
+        <!-- Main Tabs -->
+        <div class="tabs">
+            <div class="tab-list">
+                <button class="tab-btn active" onclick="showTab('overview')">📊 Overview</button>
+                <button class="tab-btn" onclick="showTab('hosts')">🖥️ Hosts ({{ stats.alive_hosts }})</button>
+                <button class="tab-btn" onclick="showTab('ports')">🔌 Ports ({{ stats.open_ports }})</button>
+                <button class="tab-btn" onclick="showTab('paths')">📁 Paths ({{ stats.discovered_paths }})</button>
+                <button class="tab-btn" onclick="showTab('vulns')">⚠️ Vulns ({{ stats.vulnerabilities }})</button>
+                <button class="tab-btn" onclick="showTab('screenshots')">📸 Screenshots ({{ screenshots|length }})</button>
+                <button class="tab-btn" onclick="showTab('logs')">📝 Logs</button>
             </div>
-            <div class="section-content">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>심각도</th>
-                            <th>템플릿</th>
-                            <th>이름</th>
-                            <th>대상 URL</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for vuln in vulnerabilities %}
-                        <tr>
-                            <td class="severity-{{ vuln.severity }}">{{ vuln.severity|upper }}</td>
-                            <td>{{ vuln.template_id }}</td>
-                            <td>{{ vuln.template_name }}</td>
-                            <td><a href="{{ vuln.matched_url }}" target="_blank">{{ vuln.matched_url }}</a></td>
-                        </tr>
+            
+            <!-- Overview Tab -->
+            <div id="overview" class="tab-content active">
+                <h2>스캔 개요</h2>
+                
+                <div class="section">
+                    <h3>🌐 발견된 서브도메인</h3>
+                    {% if subdomains %}
+                    <div style="margin-top: 10px;">
+                        {% for subdomain in subdomains[:20] %}
+                        <span class="port-badge">{{ subdomain }}</span>
                         {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        {% endif %}
-        
-        {% if web_servers %}
-        <!-- Web Servers -->
-        <div class="section">
-            <div class="section-header">
-                <h2>🌐 웹 서버</h2>
-                <span class="count">{{ web_servers|length }}</span>
-            </div>
-            <div class="section-content">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>URL</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for url in web_servers %}
-                        <tr>
-                            <td><a href="{{ url }}" target="_blank">{{ url }}</a></td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        {% endif %}
-        
-        {% if screenshots %}
-        <!-- Screenshots -->
-        <div class="section">
-            <div class="section-header">
-                <h2>📸 스크린샷</h2>
-                <span class="count">{{ screenshots|length }}</span>
-            </div>
-            <div class="section-content">
-                <div class="screenshots-grid">
-                    {% for ss in screenshots %}
-                    {% if ss.success %}
-                    <div class="screenshot-card">
-                        <img src="{{ ss.data }}" alt="{{ ss.url }}">
-                        <div class="url">{{ ss.url }}</div>
+                        {% if subdomains|length > 20 %}
+                        <span class="badge badge-info">+{{ subdomains|length - 20 }} more</span>
+                        {% endif %}
                     </div>
+                    {% else %}
+                    <p class="empty-state">발견된 서브도메인이 없습니다.</p>
                     {% endif %}
-                    {% endfor %}
+                </div>
+                
+                <div class="section">
+                    <h3>🌍 웹 서버</h3>
+                    {% if web_servers %}
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>URL</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for url in web_servers %}
+                            <tr>
+                                <td><a href="{{ url }}" target="_blank">{{ url }}</a></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <p class="empty-state">발견된 웹 서버가 없습니다.</p>
+                    {% endif %}
                 </div>
             </div>
-        </div>
-        {% endif %}
-        
-        {% if open_ports %}
-        <!-- Open Ports -->
-        <div class="section">
-            <div class="section-header">
-                <h2>🔓 열린 포트</h2>
-                <span class="count">{{ open_ports|length }}</span>
+            
+            <!-- Hosts Tab -->
+            <div id="hosts" class="tab-content">
+                <div class="controls">
+                    <div class="search-box">
+                        <input type="text" id="host-search" placeholder="호스트 검색..." onkeyup="filterHosts()">
+                    </div>
+                </div>
+                
+                {% for host, data in hosts_data.items() %}
+                <div class="host-card" data-host="{{ host }}">
+                    <div class="host-header" onclick="toggleHost(this)">
+                        <h3>{{ host }}</h3>
+                        <span class="badge badge-info">{{ data.ports|length }} ports</span>
+                    </div>
+                    <div class="host-body">
+                        <h4>열린 포트</h4>
+                        <div class="port-list" style="margin: 10px 0;">
+                            {% for port in data.ports %}
+                            <span class="port-badge {{ 'https' if port.service == 'https' else 'http' if port.is_http else '' }}">
+                                {{ port.port }}/{{ port.service }}
+                            </span>
+                            {% endfor %}
+                        </div>
+                        
+                        {% if data.paths %}
+                        <h4 style="margin-top: 15px;">발견된 경로</h4>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>경로</th>
+                                    <th>상태</th>
+                                    <th>크기</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for path in data.paths[:10] %}
+                                <tr>
+                                    <td>{{ path.path }}</td>
+                                    <td><span class="badge {{ 'badge-success' if path.status_code == 200 else 'badge-warning' if path.status_code == 301 or path.status_code == 302 else 'badge-danger' if path.status_code == 403 else 'badge-info' }}">{{ path.status_code }}</span></td>
+                                    <td>{{ path.content_length }} bytes</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        {% if data.paths|length > 10 %}
+                        <p style="color: var(--text-secondary); margin-top: 10px;">+{{ data.paths|length - 10 }} more paths</p>
+                        {% endif %}
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+                
+                {% if not hosts_data %}
+                <p class="empty-state">발견된 호스트가 없습니다.</p>
+                {% endif %}
             </div>
-            <div class="section-content">
-                <table>
+            
+            <!-- Ports Tab -->
+            <div id="ports" class="tab-content">
+                <div class="controls">
+                    <div class="search-box">
+                        <input type="text" id="port-search" placeholder="포트 또는 서비스 검색..." onkeyup="filterTable('ports-table', 'port-search')">
+                    </div>
+                    <select class="filter-select" onchange="filterByService(this.value)">
+                        <option value="">모든 서비스</option>
+                        <option value="http">HTTP</option>
+                        <option value="https">HTTPS</option>
+                        <option value="ssh">SSH</option>
+                        <option value="ftp">FTP</option>
+                    </select>
+                </div>
+                
+                <table class="data-table" id="ports-table">
                     <thead>
                         <tr>
                             <th>호스트</th>
                             <th>포트</th>
                             <th>서비스</th>
-                            <th>타입</th>
+                            <th>HTTP</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for port in open_ports %}
-                        <tr>
+                        <tr data-service="{{ port.service }}">
                             <td>{{ port.host }}</td>
-                            <td><span class="tag tag-port">{{ port.port }}</span></td>
-                            <td>{{ port.service or 'unknown' }}</td>
-                            <td>{% if port.is_http %}<span class="tag tag-http">HTTP</span>{% endif %}</td>
+                            <td>{{ port.port }}</td>
+                            <td>{{ port.service }}</td>
+                            <td>{{ '✅' if port.is_http else '❌' }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
+                
+                {% if not open_ports %}
+                <p class="empty-state">발견된 열린 포트가 없습니다.</p>
+                {% endif %}
             </div>
-        </div>
-        {% endif %}
-        
-        {% if discovered_paths %}
-        <!-- Discovered Paths -->
-        <div class="section">
-            <div class="section-header">
-                <h2>📂 발견된 경로</h2>
-                <span class="count">{{ discovered_paths|length }}</span>
-            </div>
-            <div class="section-content">
-                <table>
+            
+            <!-- Paths Tab -->
+            <div id="paths" class="tab-content">
+                <div class="controls">
+                    <div class="search-box">
+                        <input type="text" id="path-search" placeholder="경로 검색..." onkeyup="filterTable('paths-table', 'path-search')">
+                    </div>
+                    <select class="filter-select" onchange="filterByStatus(this.value)">
+                        <option value="">모든 상태</option>
+                        <option value="200">200 OK</option>
+                        <option value="301">301 Redirect</option>
+                        <option value="302">302 Redirect</option>
+                        <option value="403">403 Forbidden</option>
+                    </select>
+                </div>
+                
+                <table class="data-table" id="paths-table">
                     <thead>
                         <tr>
                             <th>URL</th>
@@ -413,191 +642,350 @@ REPORT_TEMPLATE = '''<!DOCTYPE html>
                     </thead>
                     <tbody>
                         {% for path in discovered_paths %}
-                        <tr>
+                        <tr data-status="{{ path.status_code }}">
                             <td>{{ path.url }}</td>
                             <td>{{ path.path }}</td>
-                            <td class="status-{{ path.status_code }}">{{ path.status_code }}</td>
+                            <td>
+                                <span class="badge {{ 'badge-success' if path.status_code == 200 else 'badge-warning' if path.status_code in [301, 302] else 'badge-danger' if path.status_code == 403 else 'badge-info' }}">
+                                    {{ path.status_code }}
+                                </span>
+                            </td>
                             <td>{{ path.content_length }} bytes</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
+                
+                {% if not discovered_paths %}
+                <p class="empty-state">발견된 경로가 없습니다.</p>
+                {% endif %}
             </div>
-        </div>
-        {% endif %}
-        
-        {% if subdomains %}
-        <!-- Subdomains -->
-        <div class="section">
-            <div class="section-header">
-                <h2>🔍 서브도메인</h2>
-                <span class="count">{{ subdomains|length }}</span>
-            </div>
-            <div class="section-content">
-                <table>
+            
+            <!-- Vulnerabilities Tab -->
+            <div id="vulns" class="tab-content">
+                <div class="controls">
+                    <div class="search-box">
+                        <input type="text" id="vuln-search" placeholder="취약점 검색..." onkeyup="filterTable('vulns-table', 'vuln-search')">
+                    </div>
+                    <select class="filter-select" onchange="filterBySeverity(this.value)">
+                        <option value="">모든 심각도</option>
+                        <option value="critical">Critical</option>
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
+                        <option value="info">Info</option>
+                    </select>
+                </div>
+                
+                <table class="data-table" id="vulns-table">
                     <thead>
                         <tr>
-                            <th>서브도메인</th>
+                            <th>심각도</th>
+                            <th>템플릿</th>
+                            <th>이름</th>
+                            <th>대상 URL</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for subdomain in subdomains %}
-                        <tr>
-                            <td>{{ subdomain }}</td>
+                        {% for vuln in vulnerabilities %}
+                        <tr data-severity="{{ vuln.severity }}">
+                            <td class="severity-{{ vuln.severity }}">{{ vuln.severity|upper }}</td>
+                            <td>{{ vuln.template_id }}</td>
+                            <td>{{ vuln.template_name }}</td>
+                            <td><a href="{{ vuln.matched_url }}" target="_blank">{{ vuln.matched_url }}</a></td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
+                
+                {% if not vulnerabilities %}
+                <p class="empty-state">발견된 취약점이 없습니다. ✅</p>
+                {% endif %}
+            </div>
+            
+            <!-- Screenshots Tab -->
+            <div id="screenshots" class="tab-content">
+                <div class="controls">
+                    <div class="search-box">
+                        <input type="text" id="screenshot-search" placeholder="URL 검색..." onkeyup="filterScreenshots()">
+                    </div>
+                </div>
+                
+                <div class="screenshots-grid">
+                    {% for screenshot in screenshots %}
+                    {% if screenshot.success %}
+                    <div class="screenshot-card" data-url="{{ screenshot.url }}">
+                        <img src="data:image/png;base64,{{ screenshot.base64 }}" alt="{{ screenshot.url }}" onclick="openModal(this.src)">
+                        <div class="caption">{{ screenshot.url }}</div>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+                
+                {% if not screenshots %}
+                <p class="empty-state">캡처된 스크린샷이 없습니다.</p>
+                {% endif %}
+            </div>
+            
+            <!-- Logs Tab -->
+            <div id="logs" class="tab-content">
+                <h2>스캔 로그</h2>
+                <div class="logs-container">
+                    {% for log in logs %}
+                    <div class="log-line">{{ log }}</div>
+                    {% endfor %}
+                </div>
+                
+                {% if errors %}
+                <h2 style="margin-top: 20px; color: var(--accent);">오류</h2>
+                <div class="logs-container" style="border-color: var(--accent);">
+                    {% for error in errors %}
+                    <div class="log-line" style="color: var(--accent);">{{ error }}</div>
+                    {% endfor %}
+                </div>
+                {% endif %}
             </div>
         </div>
-        {% endif %}
-        
-        {% if alive_hosts %}
-        <!-- Alive Hosts -->
-        <div class="section">
-            <div class="section-header">
-                <h2>✅ 활성 호스트</h2>
-                <span class="count">{{ alive_hosts|length }}</span>
-            </div>
-            <div class="section-content">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>호스트</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for host in alive_hosts %}
-                        <tr>
-                            <td>{{ host }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        {% endif %}
-        
-        {% if logs or errors %}
-        <!-- Logs -->
-        <div class="section">
-            <div class="section-header">
-                <h2>📋 로그</h2>
-                <span class="count">{{ logs|length + errors|length }}</span>
-            </div>
-            <div class="section-content">
-                {% for error in errors %}
-                <div class="log-entry error-log">{{ error }}</div>
-                {% endfor %}
-                {% for log in logs[-50:] %}
-                <div class="log-entry">{{ log }}</div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
-        
-        <footer>
-            <p>Generated by Red Iris Info Gather</p>
-            <p>{{ scan_time }}</p>
-        </footer>
     </div>
-</body>
-</html>'''
-
-
-def encode_image_base64(image_path: str) -> str:
-    """Encode image to base64 data URL"""
-    try:
-        with open(image_path, 'rb') as f:
-            data = f.read()
-        
-        # Detect format
-        ext = Path(image_path).suffix.lower()
-        mime_types = {
-            '.png': 'image/png',
-            '.jpg': 'image/jpeg',
-            '.jpeg': 'image/jpeg',
-            '.gif': 'image/gif',
-            '.webp': 'image/webp'
+    
+    <!-- Image Modal -->
+    <div class="modal" id="imageModal" onclick="closeModal()">
+        <span class="modal-close">&times;</span>
+        <img id="modalImage" src="">
+    </div>
+    
+    <script>
+        // Tab switching
+        function showTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            event.target.classList.add('active');
         }
-        mime = mime_types.get(ext, 'image/png')
         
-        encoded = base64.b64encode(data).decode('utf-8')
-        return f"data:{mime};base64,{encoded}"
+        // Host card toggle
+        function toggleHost(header) {
+            const body = header.nextElementSibling;
+            body.classList.toggle('expanded');
+        }
+        
+        // Filter hosts
+        function filterHosts() {
+            const query = document.getElementById('host-search').value.toLowerCase();
+            document.querySelectorAll('.host-card').forEach(card => {
+                const host = card.dataset.host.toLowerCase();
+                card.style.display = host.includes(query) ? 'block' : 'none';
+            });
+        }
+        
+        // Filter table
+        function filterTable(tableId, searchId) {
+            const query = document.getElementById(searchId).value.toLowerCase();
+            const rows = document.querySelectorAll(`#${tableId} tbody tr`);
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(query) ? '' : 'none';
+            });
+        }
+        
+        // Filter by service
+        function filterByService(service) {
+            const rows = document.querySelectorAll('#ports-table tbody tr');
+            rows.forEach(row => {
+                if (!service || row.dataset.service === service) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+        
+        // Filter by status
+        function filterByStatus(status) {
+            const rows = document.querySelectorAll('#paths-table tbody tr');
+            rows.forEach(row => {
+                if (!status || row.dataset.status === status) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+        
+        // Filter by severity
+        function filterBySeverity(severity) {
+            const rows = document.querySelectorAll('#vulns-table tbody tr');
+            rows.forEach(row => {
+                if (!severity || row.dataset.severity === severity) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+        
+        // Filter screenshots
+        function filterScreenshots() {
+            const query = document.getElementById('screenshot-search').value.toLowerCase();
+            document.querySelectorAll('.screenshot-card').forEach(card => {
+                const url = card.dataset.url.toLowerCase();
+                card.style.display = url.includes(query) ? 'block' : 'none';
+            });
+        }
+        
+        // Modal
+        function openModal(src) {
+            document.getElementById('modalImage').src = src;
+            document.getElementById('imageModal').classList.add('active');
+        }
+        
+        function closeModal() {
+            document.getElementById('imageModal').classList.remove('active');
+        }
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeModal();
+        });
+        
+        // Auto-expand first host
+        const firstHost = document.querySelector('.host-body');
+        if (firstHost) firstHost.classList.add('expanded');
+    </script>
+</body>
+</html>
+"""
+
+
+def load_screenshot_as_base64(screenshot_path: str) -> str:
+    """Load a screenshot file and convert to base64"""
+    try:
+        path = Path(screenshot_path)
+        if path.exists():
+            with open(path, 'rb') as f:
+                return base64.b64encode(f.read()).decode('utf-8')
     except Exception:
-        return ""
+        pass
+    return ""
+
+
+def organize_data_by_host(state: ScanState) -> Dict[str, Dict]:
+    """Organize all data by host for easier display"""
+    hosts_data = defaultdict(lambda: {'ports': [], 'paths': [], 'vulnerabilities': []})
+    
+    # Organize ports by host
+    for port in state.get('open_ports', []):
+        host = port.get('host', 'unknown')
+        hosts_data[host]['ports'].append(port)
+    
+    # Organize paths by host
+    for path in state.get('discovered_paths', []):
+        # Extract host from URL
+        url = path.get('url', '')
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+            host = parsed.netloc
+            if ':' in host:
+                host = host.split(':')[0]
+            hosts_data[host]['paths'].append(path)
+        except:
+            pass
+    
+    # Organize vulnerabilities by host
+    for vuln in state.get('vulnerabilities', []):
+        matched_url = vuln.get('matched_url', '')
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(matched_url)
+            host = parsed.netloc
+            if ':' in host:
+                host = host.split(':')[0]
+            hosts_data[host]['vulnerabilities'].append(vuln)
+        except:
+            pass
+    
+    return dict(hosts_data)
 
 
 def generate_report(state: ScanState) -> dict:
     """
-    Generate HTML Report Node - Entry point
+    Generate an interactive HTML report.
     
-    Creates a comprehensive HTML report from all scan results.
+    Features:
+    - Tab-based navigation by host/domain
+    - Search and filtering
+    - Embedded screenshots
     """
-    logs = []
+    logs = [f"[ReportGenerator] Generating HTML report"]
     errors = []
     
-    logs.append("[ReportGenerator] Generating HTML report")
-    
-    # Prepare data for template
-    scan_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Statistics
-    all_targets = set()
-    all_targets.update(state.get('raw_domains', []))
-    all_targets.update(state.get('raw_ips', []))
-    all_targets.update(state.get('subdomains', []))
-    
-    stats = {
-        'targets': len(all_targets),
-        'alive_hosts': len(state.get('alive_hosts', [])),
-        'open_ports': len(state.get('open_ports', [])),
-        'web_servers': len(state.get('web_servers', [])),
-        'discovered_paths': len(state.get('discovered_paths', [])),
-        'vulnerabilities': len(state.get('vulnerabilities', []))
-    }
-    
-    # Prepare screenshots with embedded images
-    screenshots_data = []
-    for ss in state.get('screenshots', []):
-        ss_copy = dict(ss)
-        if ss.get('success') and ss.get('path') and os.path.exists(ss.get('path', '')):
-            ss_copy['data'] = encode_image_base64(ss['path'])
-        else:
-            ss_copy['data'] = ''
-        screenshots_data.append(ss_copy)
-    
-    # Render template
-    template = Template(REPORT_TEMPLATE)
-    html_content = template.render(
-        scan_time=scan_time,
-        stats=stats,
-        vulnerabilities=state.get('vulnerabilities', []),
-        web_servers=state.get('web_servers', []),
-        screenshots=screenshots_data,
-        open_ports=state.get('open_ports', []),
-        discovered_paths=state.get('discovered_paths', []),
-        subdomains=state.get('subdomains', []),
-        alive_hosts=state.get('alive_hosts', []),
-        logs=state.get('logs', []),
-        errors=state.get('errors', [])
-    )
-    
-    # Save report
-    report_filename = f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
-    report_path = config.REPORTS_DIR / report_filename
-    
     try:
-        config.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        # Calculate statistics
+        stats = {
+            'total_targets': len(set(
+                state.get('raw_domains', []) + 
+                state.get('raw_ips', []) + 
+                state.get('subdomains', [])
+            )),
+            'alive_hosts': len(state.get('alive_hosts', [])),
+            'open_ports': len(state.get('open_ports', [])),
+            'web_servers': len(state.get('web_servers', [])),
+            'discovered_paths': len(state.get('discovered_paths', [])),
+            'vulnerabilities': len(state.get('vulnerabilities', []))
+        }
+        
+        # Prepare screenshots with base64 encoding
+        screenshots = []
+        for ss in state.get('screenshots', []):
+            if ss.get('success') and ss.get('path'):
+                base64_data = load_screenshot_as_base64(ss['path'])
+                if base64_data:
+                    screenshots.append({
+                        'url': ss.get('url', ''),
+                        'base64': base64_data,
+                        'success': True
+                    })
+        
+        # Organize data by host
+        hosts_data = organize_data_by_host(state)
+        
+        # Render template
+        template = Template(REPORT_TEMPLATE)
+        html_content = template.render(
+            scan_date=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            port_mode=config.PORT_SCAN_MODE.upper(),
+            stats=stats,
+            subdomains=state.get('subdomains', []),
+            web_servers=state.get('web_servers', []),
+            hosts_data=hosts_data,
+            open_ports=state.get('open_ports', []),
+            discovered_paths=state.get('discovered_paths', []),
+            vulnerabilities=state.get('vulnerabilities', []),
+            screenshots=screenshots,
+            logs=state.get('logs', []),
+            errors=state.get('errors', [])
+        )
+        
+        # Save report
+        report_filename = f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+        report_path = config.REPORTS_DIR / report_filename
+        
         with open(report_path, 'w', encoding='utf-8') as f:
             f.write(html_content)
+        
         logs.append(f"[ReportGenerator] Report saved to: {report_path}")
+        
+        return {
+            'report_path': str(report_path),
+            'errors': errors,
+            'logs': logs
+        }
+        
     except Exception as e:
-        errors.append(f"[ReportGenerator] Error saving report: {str(e)}")
-        report_path = None
-    
-    return {
-        'report_path': str(report_path) if report_path else None,
-        'errors': errors,
-        'logs': logs
-    }
+        errors.append(f"[ReportGenerator] Error generating report: {str(e)}")
+        return {
+            'report_path': None,
+            'errors': errors,
+            'logs': logs
+        }

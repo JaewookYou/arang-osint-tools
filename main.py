@@ -192,7 +192,17 @@ def main():
         help="상세 출력 모드"
     )
     
+    parser.add_argument(
+        "--ports",
+        choices=["top100", "top1000"],
+        default="top100",
+        help="포트 스캔 범위 (기본값: top100)"
+    )
+    
     args = parser.parse_args()
+    
+    # Set port scan mode
+    config.set_port_mode(args.ports)
     
     # 배너 출력
     print_banner()
