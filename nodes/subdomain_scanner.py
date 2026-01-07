@@ -9,6 +9,7 @@ Performs subdomain enumeration using multiple tools:
 import subprocess
 import os
 import sys
+import re
 import json
 from typing import List, Set
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -16,6 +17,54 @@ from pathlib import Path
 
 from state import ScanState
 import config
+
+
+# Regex to remove ANSI escape codes
+ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
+# Regex to validate subdomain format
+SUBDOMAIN_REGEX = re.compile(r'^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$')
+
+
+def clean_subdomain(text: str) -> str:
+    """Remove ANSI codes and clean subdomain text"""
+    # Remove ANSI escape codes
+    cleaned = ANSI_ESCAPE.sub('', text)
+    # Strip whitespace
+    cleaned = cleaned.strip()
+    # Remove any remaining control characters
+    cleaned = ''.join(c for c in cleaned if c.isprintable())
+    return cleaned.lower()
+
+
+def is_valid_subdomain(subdomain: str, base_domain: str) -> bool:
+    """Check if the string is a valid subdomain"""
+    if not subdomain:
+        return False
+    
+    # Must contain the base domain
+    if base_domain.lower() not in subdomain.lower():
+        return False
+    
+    # Must have at least one dot
+    if '.' not in subdomain:
+        return False
+    
+    # Should not contain log-like patterns
+    invalid_patterns = [
+        'searching', 'enumerating', 'finished', '[', ']',
+        'now', 'for', 'in', '..', '---', '___',
+        'error', 'warning', 'http', '//', ':'
+    ]
+    for pattern in invalid_patterns:
+        if pattern in subdomain.lower():
+            return False
+    
+    # Check if it matches subdomain format
+    if SUBDOMAIN_REGEX.match(subdomain):
+        return True
+    
+    return False
 
 
 def run_subfinder(domain: str) -> List[str]:
@@ -38,11 +87,14 @@ def run_subfinder(domain: str) -> List[str]:
                 try:
                     data = json.loads(line)
                     if 'host' in data:
-                        subdomains.append(data['host'].lower())
+                        subdomain = clean_subdomain(data['host'])
+                        if is_valid_subdomain(subdomain, domain):
+                            subdomains.append(subdomain)
                 except json.JSONDecodeError:
                     # Plain text output
-                    if '.' in line:
-                        subdomains.append(line.strip().lower())
+                    subdomain = clean_subdomain(line)
+                    if is_valid_subdomain(subdomain, domain):
+                        subdomains.append(subdomain)
     except subprocess.TimeoutExpired:
         pass
     except Exception:
@@ -61,17 +113,28 @@ def run_sublist3r(domain: str) -> List[str]:
         return subdomains
     
     try:
-        # Run sublist3r.py
+        # Run sublist3r.py with output to temp file to avoid stdout pollution
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            output_file = f.name
+        
         result = subprocess.run(
-            [sys.executable, str(sublist3r_script), '-d', domain, '-o', '/dev/stdout'],
+            [sys.executable, str(sublist3r_script), '-d', domain, '-o', output_file],
             capture_output=True,
             text=True,
             timeout=300,
             cwd=str(sublist3r_dir)
         )
-        for line in result.stdout.strip().split('\n'):
-            if line and '.' in line and not line.startswith('['):
-                subdomains.append(line.strip().lower())
+        
+        # Read results from file
+        if os.path.exists(output_file):
+            with open(output_file, 'r') as f:
+                for line in f:
+                    subdomain = clean_subdomain(line)
+                    if is_valid_subdomain(subdomain, domain):
+                        subdomains.append(subdomain)
+            os.unlink(output_file)
+        
     except subprocess.TimeoutExpired:
         pass
     except Exception:
@@ -95,8 +158,9 @@ def run_shodan(domain: str) -> List[str]:
         for result in results.get('matches', []):
             hostnames = result.get('hostnames', [])
             for hostname in hostnames:
-                if domain in hostname.lower():
-                    subdomains.append(hostname.lower())
+                subdomain = clean_subdomain(hostname)
+                if is_valid_subdomain(subdomain, domain):
+                    subdomains.append(subdomain)
     except Exception:
         pass
     return subdomains
