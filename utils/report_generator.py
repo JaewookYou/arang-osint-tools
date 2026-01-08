@@ -895,23 +895,57 @@ REPORT_TEMPLATE = """
                 <table class="data-table" id="paths-table">
                     <thead>
                         <tr>
+                            <th style="width: 40px;"></th>
                             <th>URL</th>
                             <th>경로</th>
-                            <th>상태 코드</th>
+                            <th>상태</th>
+                            <th>타입</th>
                             <th>크기</th>
+                            <th>응답시간</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for path in discovered_paths %}
-                        <tr data-status="{{ path.status_code }}">
-                            <td>{{ path.url }}</td>
-                            <td>{{ path.path }}</td>
+                        <tr data-status="{{ path.status_code }}" class="endpoint-row" onclick="toggleEndpointDetail(this)">
+                            <td style="text-align: center; cursor: pointer;"><span class="expand-icon">▶</span></td>
+                            <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;">{{ path.url }}</td>
+                            <td><code>{{ path.path }}</code></td>
                             <td>
                                 <span class="badge {{ 'badge-success' if path.status_code == 200 else 'badge-warning' if path.status_code in [301, 302] else 'badge-danger' if path.status_code == 403 else 'badge-info' }}">
                                     {{ path.status_code }}
                                 </span>
                             </td>
-                            <td>{{ path.content_length }} bytes</td>
+                            <td style="font-size: 0.8rem; max-width: 150px; overflow: hidden; text-overflow: ellipsis;">{{ path.content_type or '-' }}</td>
+                            <td>{{ path.content_length }} B</td>
+                            <td>{{ path.response_time or '-' }}s</td>
+                        </tr>
+                        <tr class="endpoint-detail" style="display: none;">
+                            <td colspan="7" style="padding: 0;">
+                                <div style="background: #1a1a1a; padding: 15px;">
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                                        <!-- Response Headers -->
+                                        <div>
+                                            <h4 style="color: #4a9eff; margin: 0 0 10px 0;">📋 Response Headers</h4>
+                                            <div style="background: #2a2a2a; padding: 10px; border-radius: 6px; max-height: 300px; overflow: auto;">
+                                                <pre style="margin: 0; font-size: 0.8rem; color: #ccc; white-space: pre-wrap;">{% if path.response_headers %}{% for key, value in path.response_headers.items() %}{{ key }}: {{ value }}
+{% endfor %}{% else %}No headers captured{% endif %}</pre>
+                                            </div>
+                                        </div>
+                                        <!-- Response Body Preview -->
+                                        <div>
+                                            <h4 style="color: #4caf50; margin: 0 0 10px 0;">📄 Response Body (Preview)</h4>
+                                            <div style="background: #2a2a2a; padding: 10px; border-radius: 6px; max-height: 300px; overflow: auto;">
+                                                <pre style="margin: 0; font-size: 0.75rem; color: #aaa; white-space: pre-wrap;">{{ (path.response_body[:5000] if path.response_body else 'No body captured') | e }}{% if path.response_body and path.response_body|length > 5000 %}
+...
+[Truncated - {{ path.response_body|length }} bytes total]{% endif %}</pre>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="margin-top: 10px;">
+                                        <a href="{{ path.url }}{{ path.path }}" target="_blank" class="tab-btn" style="font-size: 0.8rem;">🔗 Open in Browser</a>
+                                    </div>
+                                </div>
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -1137,6 +1171,23 @@ REPORT_TEMPLATE = """
                     detailRow.style.display = 'table-row';
                     icon.textContent = '▼';
                     icon.style.color = '#4a9eff';
+                } else {
+                    detailRow.style.display = 'none';
+                    icon.textContent = '▶';
+                    icon.style.color = '';
+                }
+            }
+        }
+        
+        // Toggle individual endpoint detail row
+        function toggleEndpointDetail(row) {
+            const detailRow = row.nextElementSibling;
+            const icon = row.querySelector('.expand-icon');
+            if (detailRow && detailRow.classList.contains('endpoint-detail')) {
+                if (detailRow.style.display === 'none') {
+                    detailRow.style.display = 'table-row';
+                    icon.textContent = '▼';
+                    icon.style.color = '#4caf50';
                 } else {
                     detailRow.style.display = 'none';
                     icon.textContent = '▶';

@@ -25,11 +25,15 @@ class ScreenshotResult(TypedDict):
 
 
 class DirectoryScanResult(TypedDict):
-    """Directory scan result"""
+    """Directory scan result with response data"""
     url: str
     path: str
     status_code: int
     content_length: int
+    content_type: Optional[str]
+    response_time: Optional[float]
+    response_headers: Optional[Dict[str, str]]
+    response_body: Optional[str]
 
 
 class NucleiResult(TypedDict):
