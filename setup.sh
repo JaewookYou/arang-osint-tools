@@ -81,10 +81,17 @@ if command -v setcap &> /dev/null; then
 else
     print_warning "setcap not found, using setuid instead"
     
+    # Determine the correct group for root ownership (macOS uses wheel, Linux uses root)
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        ROOT_GROUP="wheel"
+    else
+        ROOT_GROUP="root"
+    fi
+    
     # Fallback to setuid
     if [ -f "$TOOLS_BIN/naabu" ]; then
         chmod u+s "$TOOLS_BIN/naabu"
-        chown root:root "$TOOLS_BIN/naabu"
+        chown root:$ROOT_GROUP "$TOOLS_BIN/naabu"
         print_success "naabu: setuid bit set"
     fi
 fi
