@@ -156,18 +156,26 @@ class OpenAIProvider(LLMProvider):
 
 
 # Model name mappings
+# User-friendly name -> (provider, actual_api_model_name)
 MODEL_MAPPINGS = {
-    # Gemini
-    "gemini-3-pro": ("gemini", "gemini-1.5-pro"),
-    "gemini-2-flash": ("gemini", "gemini-1.5-flash"),
-    # Anthropic
-    "opus-4.5": ("anthropic", "claude-opus-4-5-20250101"),
-    "claude-opus": ("anthropic", "claude-3-opus-20240229"),
-    "claude-sonnet": ("anthropic", "claude-3-5-sonnet-20241022"),
-    # OpenAI
-    "gpt-5.2-pro": ("openai", "gpt-4o"),
+    # Gemini (Google AI)
+    "gemini-3.0-pro": ("gemini", "gemini-3-pro-preview"),
+    "gemini-2.5-flash": ("gemini", "gemini-2.5-flash-preview-05-20"),
+    "gemini-2.0-flash": ("gemini", "gemini-2.0-flash"),
+    "gemini-1.5-pro": ("gemini", "gemini-1.5-pro"),
+    "gemini-1.5-flash": ("gemini", "gemini-1.5-flash"),
+    # Anthropic Claude
+    "claude-opus-4": ("anthropic", "claude-opus-4-20250514"),
+    "claude-sonnet-4": ("anthropic", "claude-sonnet-4-20250514"),
+    "claude-3.5-sonnet": ("anthropic", "claude-3-5-sonnet-20241022"),
+    "claude-3-opus": ("anthropic", "claude-3-opus-20240229"),
+    # OpenAI GPT
+    "gpt-4.1": ("openai", "gpt-4.1"),
     "gpt-4o": ("openai", "gpt-4o"),
     "gpt-4-turbo": ("openai", "gpt-4-turbo"),
+    "gpt-4": ("openai", "gpt-4"),
+    "o3": ("openai", "o3"),
+    "o4-mini": ("openai", "o4-mini"),
 }
 
 
@@ -339,8 +347,75 @@ Provide:
         return provider.generate(prompt, CVE_ANALYSIS_SYSTEM_PROMPT)
     except:
         return ""
+def summarize_cves_korean(cves: List[Dict]) -> List[Dict]:
+    """
+    Generate Korean summaries for CVEs using LLM.
+    Returns CVEs with added 'korean_summary' field.
+    """
+    provider = get_llm_provider()
+    
+    if not provider or not cves:
+        return cves
+    
+    # Prepare CVE data for batch processing
+    cve_data = []
+    for cve in cves[:15]:  # Limit to 15 for token efficiency
+        cve_data.append({
+            "id": cve.get("cve_id"),
+            "desc": cve.get("description", "")[:300],
+            "product": cve.get("product", ""),
+            "severity": cve.get("severity", "")
+        })
+    
+    prompt = f"""다음 CVE 목록을 분석하고 각각에 대해 한국어로 간단한 요약을 작성해주세요.
+
+각 CVE에 대해:
+1. 취약점 유형 (예: RCE, SSRF, XSS 등)
+2. 공격자가 할 수 있는 것 (한 문장)
+3. 영향받는 구성요소
+
+CVE 데이터:
+{json.dumps(cve_data, ensure_ascii=False, indent=2)}
+
+JSON 형식으로 응답:
+{{
+    "summaries": [
+        {{
+            "id": "CVE-XXXX",
+            "type": "취약점 유형",
+            "impact": "공격자가 할 수 있는 것",
+            "component": "영향받는 구성요소",
+            "summary_ko": "전체 한국어 요약 (2-3문장)"
+        }}
+    ]
+}}"""
+
+    try:
+        response = provider.generate(prompt, "보안 전문가로서 CVE를 분석합니다. JSON으로만 응답하세요.")
+        
+        # Parse JSON response
+        start = response.find('{')
+        end = response.rfind('}') + 1
+        if start >= 0 and end > start:
+            result = json.loads(response[start:end])
+            summaries = {s['id']: s for s in result.get('summaries', [])}
+            
+            # Add Korean summaries to CVEs
+            for cve in cves:
+                cve_id = cve.get('cve_id')
+                if cve_id in summaries:
+                    s = summaries[cve_id]
+                    cve['korean_summary'] = s.get('summary_ko', '')
+                    cve['vuln_type'] = s.get('type', '')
+                    cve['impact'] = s.get('impact', '')
+                    cve['component'] = s.get('component', '')
+    except Exception as e:
+        pass
+    
+    return cves
 
 
 def is_llm_enabled() -> bool:
     """Check if LLM mode is enabled"""
     return os.environ.get("LLM_MODE", "off").lower() == "on" and os.environ.get("LLM_API_KEY", "")
+

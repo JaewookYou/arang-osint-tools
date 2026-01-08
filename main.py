@@ -276,11 +276,9 @@ def main():
     # 그래프 컴파일
     app = workflow.compile()
     
+    
     # 초기 상태 생성
     initial_state = create_initial_state(str(input_file.absolute()))
-    
-    # Import progress utilities
-    from utils.progress import Spinner, section, status as prog_status, substep
     
     print()
     print("=" * 60)
@@ -308,15 +306,11 @@ def main():
             for node_name, node_output in output.items():
                 icon, title, desc = NODE_INFO.get(node_name, ('•', node_name, ''))
                 
-                # Start spinner for this node
-                spinner = Spinner(f"{title} - {desc}")
-                spinner.start()
-                
                 # Process output
                 logs = node_output.get('logs', [])
                 errors = node_output.get('errors', [])
                 
-                # Stop spinner with result count
+                # Build result summary
                 result_counts = []
                 if 'subdomains' in node_output and node_output['subdomains']:
                     result_counts.append(f"서브도메인 {len(node_output['subdomains'])}개")
@@ -339,12 +333,17 @@ def main():
                     result_counts.append(f"스크린샷 {len(node_output['screenshots'])}개")
                 
                 result_str = " | ".join(result_counts) if result_counts else "완료"
-                spinner.stop(success=len(errors) == 0, message=f"{icon} {title}: {result_str}")
+                
+                # Print status with color
+                status = "✓" if len(errors) == 0 else "✗"
+                color = "\033[92m" if len(errors) == 0 else "\033[91m"
+                reset = "\033[0m"
+                
+                print(f"{color}{status}{reset} {icon} {title}: {result_str}")
                 
                 # Show substeps in verbose mode
                 if args.verbose and logs:
-                    for log in logs[-3:]:  # Show last 3 logs
-                        # Clean log prefix
+                    for log in logs[-3:]:
                         log_clean = log.split(']')[-1].strip() if ']' in log else log
                         print(f"      └─ {log_clean}")
                 

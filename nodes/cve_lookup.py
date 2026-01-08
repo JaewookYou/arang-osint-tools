@@ -737,14 +737,21 @@ def run(state: ScanState) -> dict:
         
         # LLM-enhanced analysis
         try:
-            from utils.llm_utils import is_llm_enabled, analyze_cves_with_llm
+            from utils.llm_utils import is_llm_enabled, analyze_cves_with_llm, summarize_cves_korean
             
             if is_llm_enabled() and cve_results:
                 logs.append("[CVELookup] LLM mode enabled, performing enhanced analysis...")
+                
+                # Prioritization analysis
                 llm_analysis = analyze_cves_with_llm(cve_results, tech_stack_str)
                 
                 if llm_analysis:
                     logs.append("[CVELookup] LLM analysis complete")
+                
+                # Korean summaries
+                logs.append("[CVELookup] Generating Korean CVE summaries...")
+                cve_results = summarize_cves_korean(cve_results)
+                logs.append("[CVELookup] Korean summaries complete")
         except:
             pass
         

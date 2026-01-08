@@ -744,6 +744,7 @@ REPORT_TEMPLATE = """
                         <table class="data-table" id="cves-table">
                             <thead>
                                 <tr>
+                                    <th style="width: 40px;"></th>
                                     <th>CVE ID</th>
                                     <th>제품</th>
                                     <th>CVSS</th>
@@ -754,8 +755,9 @@ REPORT_TEMPLATE = """
                             </thead>
                             <tbody>
                                 {% for cve in cve_results %}
-                                <tr data-severity="{{ cve.severity }}">
-                                    <td><a href="{{ cve.url }}" target="_blank">{{ cve.cve_id }}</a></td>
+                                <tr data-severity="{{ cve.severity }}" class="cve-row" onclick="toggleCVEDetail(this)">
+                                    <td style="text-align: center; cursor: pointer;"><span class="expand-icon">▶</span></td>
+                                    <td><a href="{{ cve.url }}" target="_blank" onclick="event.stopPropagation();">{{ cve.cve_id }}</a></td>
                                     <td><strong>{{ cve.product }}</strong>{% if cve.version %} {{ cve.version }}{% endif %}</td>
                                     <td>{{ cve.cvss_score or '-' }}</td>
                                     <td>
@@ -764,7 +766,29 @@ REPORT_TEMPLATE = """
                                         </span>
                                     </td>
                                     <td style="font-size: 0.8rem;">{{ cve.source or 'NVD' }}</td>
-                                    <td style="font-size: 0.85rem; max-width: 300px;">{{ cve.description[:120] }}{% if cve.description|length > 120 %}...{% endif %}</td>
+                                    <td style="font-size: 0.85rem; max-width: 300px;">{{ cve.description[:80] }}{% if cve.description|length > 80 %}...{% endif %}</td>
+                                </tr>
+                                <tr class="cve-detail" style="display: none;">
+                                    <td colspan="7" style="padding: 15px 20px; background: #1e1e1e;">
+                                        {% if cve.korean_summary %}
+                                        <div style="margin-bottom: 12px; padding: 10px; background: #2a2a2a; border-radius: 6px; border-left: 3px solid #4a9eff;">
+                                            <strong style="color: #4a9eff;">🇰🇷 한국어 요약</strong><br>
+                                            {% if cve.vuln_type %}<span class="badge badge-info" style="margin: 5px 0;">{{ cve.vuln_type }}</span>{% endif %}
+                                            {% if cve.component %}<span class="badge" style="background: #555; margin: 5px 0;">{{ cve.component }}</span>{% endif %}<br>
+                                            <p style="margin-top: 8px; line-height: 1.6;">{{ cve.korean_summary }}</p>
+                                            {% if cve.impact %}
+                                            <p style="margin-top: 5px; color: #ff6b6b;"><strong>⚠️ 영향:</strong> {{ cve.impact }}</p>
+                                            {% endif %}
+                                        </div>
+                                        {% endif %}
+                                        <div>
+                                            <strong>📝 전체 설명</strong><br>
+                                            <p style="margin-top: 8px; line-height: 1.6; color: #ccc;">{{ cve.description }}</p>
+                                        </div>
+                                        <div style="margin-top: 10px;">
+                                            <a href="{{ cve.url }}" target="_blank" class="tab-btn" style="font-size: 0.8rem;">🔗 상세 정보 보기</a>
+                                        </div>
+                                    </td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -1065,6 +1089,23 @@ REPORT_TEMPLATE = """
             } else {
                 table.style.display = 'none';
                 btn.textContent = '📋 전체 CVE 펼치기';
+            }
+        }
+        
+        // Toggle individual CVE detail row
+        function toggleCVEDetail(row) {
+            const detailRow = row.nextElementSibling;
+            const icon = row.querySelector('.expand-icon');
+            if (detailRow && detailRow.classList.contains('cve-detail')) {
+                if (detailRow.style.display === 'none') {
+                    detailRow.style.display = 'table-row';
+                    icon.textContent = '▼';
+                    icon.style.color = '#4a9eff';
+                } else {
+                    detailRow.style.display = 'none';
+                    icon.textContent = '▶';
+                    icon.style.color = '';
+                }
             }
         }
         
