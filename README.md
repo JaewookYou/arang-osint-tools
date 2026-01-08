@@ -50,8 +50,13 @@ pip install -r requirements.txt
 
 ```bash
 source .venv/bin/activate
-sudo python main.py --input targets.txt --verbose
+python main.py --input targets.txt --verbose
 ```
+
+> ✅ **sudo 없이 실행 가능!** 자동으로 TCP Connect 스캔으로 폴백됩니다.
+> 
+> - **sudo 없이**: TCP Connect 스캔 (동일 결과, 약간 느림)
+> - **sudo 사용**: SYN 스캔 (빠름, 스텔시)
 
 ### 옵션
 
@@ -59,18 +64,22 @@ sudo python main.py --input targets.txt --verbose
 |------|------|
 | `-i, --input` | 타겟 파일 (필수) |
 | `-o, --output` | 결과 디렉터리 (기본: ./output) |
+| `--ports` | 포트 범위: `top100`(기본), `top1000`, `full`(1-65535) |
 | `--skip-screenshots` | 스크린샷 건너뛰기 |
 | `--skip-nuclei` | Nuclei 스캔 건너뛰기 |
 | `-v, --verbose` | 상세 출력 |
 
-### Shodan 사용
+### 환경 변수 (.env 파일)
 
 ```bash
-export SHODAN_API_KEY="your_api_key"
-sudo python main.py --input targets.txt --verbose
+cp .env.example .env
+nano .env
 ```
 
-> ⚠️ **sudo 권한**: naabu의 SYN 스캔을 위해 root 권한이 필요합니다.
+```ini
+SHODAN_API_KEY=your_key    # 서브도메인/호스트 정보
+NVD_API_KEY=your_key       # CVE 조회 (10배 빠름)
+```
 
 ## 입력 파일 형식
 
