@@ -15,11 +15,17 @@ LangGraph 기반 모의해킹 정보수집 자동화 도구
     10.0.0.0/24
 """
 import warnings
-# Suppress noisy warnings from dependencies
+# Suppress noisy warnings from dependencies BEFORE any imports
 warnings.filterwarnings("ignore", category=UserWarning, module="Wappalyzer")
 warnings.filterwarnings("ignore", category=UserWarning, module="urllib3")
 warnings.filterwarnings("ignore", message=".*pkg_resources.*")
 warnings.filterwarnings("ignore", message=".*NotOpenSSLWarning.*")
+warnings.filterwarnings("ignore", message=".*urllib3.*OpenSSL.*")
+warnings.filterwarnings("ignore", message=".*LibreSSL.*")
+
+# Also suppress at module level
+import urllib3
+urllib3.disable_warnings()
 
 import argparse
 import sys
