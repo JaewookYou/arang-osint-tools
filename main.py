@@ -126,13 +126,49 @@ def print_banner():
     ╔══════════════════════════════════════════════════════════════╗
     ║                                                              ║
     ║   🔴 RED IRIS INFO GATHER                                    ║
-    ║   Automated Penetration Testing Information Gathering Tool  ║
+    ║   Automated Penetration Testing Information Gathering Tool   ║
     ║                                                              ║
     ║   LangGraph-based scanning pipeline                          ║
     ║                                                              ║
     ╚══════════════════════════════════════════════════════════════╝
     """
     print(banner)
+
+
+def print_config():
+    """현재 설정 정보 출력"""
+    import os
+    from utils.llm_utils import is_llm_enabled
+    
+    # Port scan mode info
+    port_count = len(config.WELLKNOWN_PORTS)
+    port_mode = config.PORT_SCAN_MODE.upper()
+    
+    # API status
+    shodan_status = "✅ 활성" if config.SHODAN_API_KEY else "❌ 미설정"
+    nvd_status = "✅ 활성 (빠른 검색)" if config.NVD_API_KEY else "⚠️ 미설정 (느린 검색)"
+    
+    # LLM status
+    llm_mode = os.environ.get("LLM_MODE", "off")
+    llm_model = os.environ.get("LLM_MODEL", "없음")
+    if is_llm_enabled():
+        llm_status = f"✅ 활성 ({llm_model})"
+    else:
+        llm_status = "❌ 비활성"
+    
+    print("    ┌─────────────────────────────────────────────────────────────┐")
+    print("    │  📋 현재 설정                                               │")
+    print("    ├─────────────────────────────────────────────────────────────┤")
+    print(f"    │  🔌 포트 스캔: {port_mode} ({port_count:,}개 포트)")
+    print(f"    │  🧵 최대 스레드: {config.MAX_THREADS}")
+    print(f"    │  ⏱️  타임아웃: {config.SCAN_TIMEOUT}초")
+    print("    ├─────────────────────────────────────────────────────────────┤")
+    print(f"    │  🔍 Shodan API: {shodan_status}")
+    print(f"    │  📚 NVD API: {nvd_status}")
+    print(f"    │  🤖 LLM 분석: {llm_status}")
+    print("    └─────────────────────────────────────────────────────────────┘")
+    print()
+
 
 
 def print_status(message: str, level: str = "info"):
@@ -210,8 +246,9 @@ def main():
     # Set port scan mode
     config.set_port_mode(args.ports)
     
-    # 배너 출력
+    # 배너 및 설정 출력
     print_banner()
+    print_config()
     
     # 입력 파일 확인
     input_file = Path(args.input)
