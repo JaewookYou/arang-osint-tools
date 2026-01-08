@@ -97,6 +97,7 @@ class ScanState(TypedDict):
     
     # === CVE Lookup ===
     cve_results: Annotated[List[CVEResult], operator.add]  # Known CVEs for technologies
+    llm_analysis: Optional[Dict[str, Any]]  # LLM-enhanced analysis (if enabled)
     
     # === Screenshots ===
     screenshots: Annotated[List[ScreenshotResult], operator.add]  # Captured screenshots
@@ -129,6 +130,7 @@ def create_initial_state(input_file: str) -> ScanState:
         web_servers=[],
         tech_results=[],
         cve_results=[],
+        llm_analysis=None,
         screenshots=[],
         discovered_paths=[],
         vulnerabilities=[],

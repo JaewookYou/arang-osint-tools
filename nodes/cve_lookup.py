@@ -423,6 +423,7 @@ def run(state: ScanState) -> dict:
     logs = []
     errors = []
     cve_results: List[Dict[str, Any]] = []
+    llm_analysis: Dict[str, Any] = {}
     
     logs.append(f"[CVELookup] Analyzing {len(tech_results)} technology results")
     logs.append("[CVELookup] Sources: NVD, OSV, CISA-KEV")
@@ -431,18 +432,21 @@ def run(state: ScanState) -> dict:
         logs.append("[CVELookup] No technology results to analyze")
         return {
             'cve_results': [],
+            'llm_analysis': {},
             'errors': errors,
             'logs': logs
         }
     
     # Count unique technologies
     unique_techs = set()
+    tech_stack_str = ""
     for result in tech_results:
         for tech in result.get('technologies', []):
             name = tech.get('name', '')
             version = tech.get('version', '')
             unique_techs.add(f"{name} {version}".strip())
     
+    tech_stack_str = ", ".join(list(unique_techs)[:10])
     logs.append(f"[CVELookup] Found {len(unique_techs)} unique technologies")
     
     try:
@@ -460,11 +464,34 @@ def run(state: ScanState) -> dict:
             if sev in severity_counts:
                 logs.append(f"[CVELookup]   - {sev.upper()}: {severity_counts[sev]}")
         
+        # LLM-enhanced analysis if enabled
+        try:
+            from utils.llm_utils import is_llm_enabled, analyze_cves_with_llm
+            
+            if is_llm_enabled() and cve_results:
+                logs.append("[CVELookup] LLM mode enabled, performing enhanced analysis...")
+                llm_analysis = analyze_cves_with_llm(cve_results, tech_stack_str)
+                
+                if llm_analysis:
+                    logs.append("[CVELookup] LLM analysis complete")
+                    
+                    # Log priority CVEs from LLM
+                    priority_cves = llm_analysis.get('priority_cves', [])
+                    if priority_cves:
+                        logs.append("[CVELookup] LLM Priority CVEs:")
+                        for pcve in priority_cves[:3]:
+                            logs.append(f"[CVELookup]   - {pcve.get('id')}: {pcve.get('reason', '')[:50]}")
+        except ImportError:
+            pass
+        except Exception as e:
+            logs.append(f"[CVELookup] LLM analysis skipped: {str(e)[:50]}")
+        
     except Exception as e:
         errors.append(f"[CVELookup] Error: {str(e)}")
     
     return {
         'cve_results': cve_results,
+        'llm_analysis': llm_analysis,
         'errors': errors,
         'logs': logs
     }
