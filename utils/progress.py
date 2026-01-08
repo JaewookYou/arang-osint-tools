@@ -17,8 +17,7 @@ class Spinner:
     """Animated spinner for console output"""
     
     FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-    # Alternative: ["◐", "◓", "◑", "◒"]
-    # Alternative: ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"]
+    CLEAR_LINE = "\033[2K"  # ANSI escape to clear entire line
     
     def __init__(self, message: str = "", indent: int = 0):
         self.message = message
@@ -33,7 +32,8 @@ class Spinner:
             frame = self.FRAMES[self.frame_idx % len(self.FRAMES)]
             indent_str = "    " * self.indent
             elapsed = time.time() - self.start_time
-            sys.stdout.write(f"\r{indent_str}{frame} {self.message} ({elapsed:.1f}s)")
+            # Clear line and write spinner
+            sys.stdout.write(f"\r{self.CLEAR_LINE}\r{indent_str}{frame} {self.message} ({elapsed:.1f}s)")
             sys.stdout.flush()
             self.frame_idx += 1
             time.sleep(0.1)
@@ -56,7 +56,8 @@ class Spinner:
         reset = "\033[0m"
         
         final_message = message if message else self.message
-        sys.stdout.write(f"\r{indent_str}{color}{status}{reset} {final_message} ({elapsed:.1f}s)\n")
+        # Clear line and write final status
+        sys.stdout.write(f"\r{self.CLEAR_LINE}\r{indent_str}{color}{status}{reset} {final_message} ({elapsed:.1f}s)\n")
         sys.stdout.flush()
     
     def update(self, message: str):
