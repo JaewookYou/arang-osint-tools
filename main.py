@@ -283,6 +283,11 @@ def main():
     # 그래프 컴파일
     app = workflow.compile()
     
+    # 데이터베이스 초기화
+    from utils.database import init_database, get_database
+    db = init_database()
+    scan_id = db.create_scan(str(input_file.absolute()), target_count=0)
+    print_status(f"데이터베이스: {db.db_path.name}", "success")
     
     # 초기 상태 생성
     initial_state = create_initial_state(str(input_file.absolute()))
@@ -354,7 +359,53 @@ def main():
                         log_clean = log.split(']')[-1].strip() if ']' in log else log
                         print(f"      └─ {log_clean}")
                 
+                # Save data to database
+                try:
+                    # Subdomains/hosts
+                    if 'subdomains' in node_output and node_output['subdomains']:
+                        hosts = [{'hostname': h, 'is_alive': False} for h in node_output['subdomains']]
+                        db.add_hosts_batch(scan_id, hosts)
+                    
+                    if 'alive_hosts' in node_output and node_output['alive_hosts']:
+                        for h in node_output['alive_hosts']:
+                            db.add_host(scan_id, h, is_alive=True)
+                    
+                    # Ports
+                    if 'open_ports' in node_output and node_output['open_ports']:
+                        db.add_ports_batch(scan_id, node_output['open_ports'])
+                    
+                    # Technologies
+                    if 'tech_results' in node_output and node_output['tech_results']:
+                        for result in node_output['tech_results']:
+                            url = result.get('url', '')
+                            for tech in result.get('technologies', []):
+                                db.add_technology(
+                                    scan_id, url,
+                                    tech.get('name', ''),
+                                    tech.get('version'),
+                                    tech.get('category'),
+                                    tech.get('source')
+                                )
+                    
+                    # CVEs
+                    if 'cve_results' in node_output and node_output['cve_results']:
+                        db.add_cves_batch(scan_id, node_output['cve_results'])
+                    
+                    # Endpoints
+                    if 'discovered_paths' in node_output and node_output['discovered_paths']:
+                        db.add_endpoints_batch(scan_id, node_output['discovered_paths'])
+                    
+                    # Vulnerabilities
+                    if 'vulnerabilities' in node_output and node_output['vulnerabilities']:
+                        db.add_vulnerabilities_batch(scan_id, node_output['vulnerabilities'])
+                except Exception as db_error:
+                    if args.verbose:
+                        print(f"      └─ DB 저장 오류: {db_error}")
+                
                 final_state = node_output
+        
+        # Mark scan as complete
+        db.complete_scan(scan_id)
         
         print()
         print("=" * 60)
@@ -362,6 +413,8 @@ def main():
         # 결과 요약
         if final_state and final_state.get('report_path'):
             print(f"  📊 리포트: {final_state['report_path']}")
+        
+        print(f"  💾 데이터베이스: {db.db_path}")
         
         print("  ✅ 스캔 완료!")
         print("=" * 60)
