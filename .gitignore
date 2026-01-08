@@ -66,3 +66,6 @@ reports/
 .DS_Store
 .AppleDouble
 .LSOverride
+
+# Context document (for local development reference only)
+root_context.md
