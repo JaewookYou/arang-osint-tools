@@ -2,22 +2,49 @@
 Red Iris Info Gather - LLM Utility Module
 
 Multi-provider LLM support for enhanced CVE analysis:
-- Google Gemini 3 Pro
-- Anthropic Opus 4.5
-- OpenAI GPT-5.2 Pro
+- Google Gemini
+- Anthropic Claude
+- OpenAI GPT
 
 Provides:
 - CVE severity prioritization
-- Exploit likelihood assessment
-- Mitigation recommendations
+- Detailed Korean CVE summaries
 - Attack vector analysis
+- Request/Response logging
 """
 import os
 import json
 import requests
 from typing import Optional, Dict, Any, List
+from datetime import datetime
+from pathlib import Path
 
 import config
+
+# LLM Log directory
+LLM_LOG_DIR = config.OUTPUT_DIR / "llm_logs"
+
+
+def log_llm_request(provider: str, model: str, prompt: str, system_prompt: str, response: str):
+    """Log LLM request/response for debugging"""
+    try:
+        LLM_LOG_DIR.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_file = LLM_LOG_DIR / f"llm_{timestamp}.json"
+        
+        log_data = {
+            "timestamp": datetime.now().isoformat(),
+            "provider": provider,
+            "model": model,
+            "system_prompt": system_prompt,
+            "prompt": prompt,
+            "response": response,
+        }
+        
+        with open(log_file, 'w', encoding='utf-8') as f:
+            json.dump(log_data, f, ensure_ascii=False, indent=2)
+    except:
+        pass  # Don't fail on logging errors
 
 
 class LLMProvider:
@@ -61,26 +88,31 @@ class GeminiProvider(LLMProvider):
             "contents": contents,
             "generationConfig": {
                 "temperature": 0.3,
-                "maxOutputTokens": 2048,
+                "maxOutputTokens": 4096,
             }
         }
         
+        response_text = ""
         try:
             response = requests.post(
                 f"{url}?key={self.api_key}",
                 headers=headers,
                 json=payload,
-                timeout=60
+                timeout=120
             )
             
             if response.status_code == 200:
                 data = response.json()
-                return data["candidates"][0]["content"]["parts"][0]["text"]
+                response_text = data["candidates"][0]["content"]["parts"][0]["text"]
             else:
-                return f"Error: {response.status_code}"
+                response_text = f"Error: {response.status_code} - {response.text[:200]}"
                 
         except Exception as e:
-            return f"Error: {str(e)}"
+            response_text = f"Error: {str(e)}"
+        
+        # Log request/response
+        log_llm_request("gemini", self.model, prompt, system_prompt, response_text)
+        return response_text
 
 
 class AnthropicProvider(LLMProvider):
@@ -97,7 +129,7 @@ class AnthropicProvider(LLMProvider):
         
         payload = {
             "model": self.model,
-            "max_tokens": 2048,
+            "max_tokens": 4096,
             "messages": [
                 {"role": "user", "content": prompt}
             ]
@@ -106,17 +138,21 @@ class AnthropicProvider(LLMProvider):
         if system_prompt:
             payload["system"] = system_prompt
         
+        response_text = ""
         try:
-            response = requests.post(url, headers=headers, json=payload, timeout=60)
+            response = requests.post(url, headers=headers, json=payload, timeout=120)
             
             if response.status_code == 200:
                 data = response.json()
-                return data["content"][0]["text"]
+                response_text = data["content"][0]["text"]
             else:
-                return f"Error: {response.status_code}"
+                response_text = f"Error: {response.status_code} - {response.text[:200]}"
                 
         except Exception as e:
-            return f"Error: {str(e)}"
+            response_text = f"Error: {str(e)}"
+        
+        log_llm_request("anthropic", self.model, prompt, system_prompt, response_text)
+        return response_text
 
 
 class OpenAIProvider(LLMProvider):
@@ -138,23 +174,24 @@ class OpenAIProvider(LLMProvider):
         payload = {
             "model": self.model,
             "messages": messages,
-            "max_tokens": 2048,
+            "max_tokens": 4096,
             "temperature": 0.3
         }
         
+        response_text = ""
         try:
-            response = requests.post(url, headers=headers, json=payload, timeout=60)
+            response = requests.post(url, headers=headers, json=payload, timeout=120)
             
             if response.status_code == 200:
                 data = response.json()
-                return data["choices"][0]["message"]["content"]
+                response_text = data["choices"][0]["message"]["content"]
             else:
-                return f"Error: {response.status_code}"
-                
+                response_text = f"Error: {response.status_code} - {response.text[:200]}"
         except Exception as e:
-            return f"Error: {str(e)}"
-
-
+            response_text = f"Error: {str(e)}"
+        
+        log_llm_request("openai", self.model, prompt, system_prompt, response_text)
+        return response_text
 # Model name mappings
 # User-friendly name -> (provider, actual_api_model_name)
 MODEL_MAPPINGS = {
@@ -344,8 +381,8 @@ Provide:
 
 def summarize_cves_korean(cves: List[Dict]) -> List[Dict]:
     """
-    Generate Korean summaries for CVEs using LLM.
-    Returns CVEs with added 'korean_summary' field.
+    Generate detailed Korean summaries for CVEs using LLM.
+    Includes: affected versions, conditions, impact, attack scenarios.
     """
     provider = get_llm_provider()
     
@@ -354,39 +391,50 @@ def summarize_cves_korean(cves: List[Dict]) -> List[Dict]:
     
     # Prepare CVE data for batch processing
     cve_data = []
-    for cve in cves[:15]:  # Limit to 15 for token efficiency
+    for cve in cves[:10]:  # Limit to 10 for detailed analysis
         cve_data.append({
             "id": cve.get("cve_id"),
-            "desc": cve.get("description", "")[:300],
+            "desc": cve.get("description", ""),
             "product": cve.get("product", ""),
-            "severity": cve.get("severity", "")
+            "version": cve.get("version", ""),
+            "severity": cve.get("severity", ""),
+            "source": cve.get("source", "")
         })
     
-    prompt = f"""다음 CVE 목록을 분석하고 각각에 대해 한국어로 간단한 요약을 작성해주세요.
+    prompt = f"""보안 전문가로서 다음 CVE 목록을 상세히 분석해주세요.
 
-각 CVE에 대해:
-1. 취약점 유형 (예: RCE, SSRF, XSS 등)
-2. 공격자가 할 수 있는 것 (한 문장)
-3. 영향받는 구성요소
+각 CVE에 대해 **반드시** 다음 정보를 한국어로 작성:
+
+1. **vuln_type**: 취약점 유형 (RCE, SSRF, Path Traversal, DoS 등)
+2. **affected_versions**: 영향받는 버전 범위 (예: "2.4.49 ~ 2.4.51", "모든 버전")
+3. **conditions**: 취약점이 발동되는 조건 (예: "mod_cgi 활성화 필요", "기본 설정에서 취약")
+4. **impact**: 공격 성공 시 영향 (서버 완전 장악, 정보 유출 등)
+5. **attack_scenario**: 실제 공격 시나리오 (1-2문장)
+6. **summary_ko**: 전체 요약 (3-4문장의 상세 설명)
 
 CVE 데이터:
 {json.dumps(cve_data, ensure_ascii=False, indent=2)}
 
-JSON 형식으로 응답:
+JSON 형식으로만 응답 (다른 텍스트 없이):
 {{
     "summaries": [
         {{
             "id": "CVE-XXXX",
-            "type": "취약점 유형",
-            "impact": "공격자가 할 수 있는 것",
-            "component": "영향받는 구성요소",
-            "summary_ko": "전체 한국어 요약 (2-3문장)"
+            "vuln_type": "취약점 유형",
+            "affected_versions": "영향받는 버전",
+            "conditions": "취약점 발동 조건",
+            "impact": "공격 성공 시 영향",
+            "attack_scenario": "공격 시나리오",
+            "summary_ko": "전체 한국어 요약"
         }}
     ]
 }}"""
 
+    system_prompt = """당신은 모의해킹 전문가입니다. CVE를 분석하여 실제 침투테스트에 활용할 수 있는 정보를 제공합니다.
+반드시 JSON 형식으로만 응답하세요. 각 필드는 한국어로 작성합니다."""
+
     try:
-        response = provider.generate(prompt, "보안 전문가로서 CVE를 분석합니다. JSON으로만 응답하세요.")
+        response = provider.generate(prompt, system_prompt)
         
         # Parse JSON response
         start = response.find('{')
@@ -401,9 +449,11 @@ JSON 형식으로 응답:
                 if cve_id in summaries:
                     s = summaries[cve_id]
                     cve['korean_summary'] = s.get('summary_ko', '')
-                    cve['vuln_type'] = s.get('type', '')
+                    cve['vuln_type'] = s.get('vuln_type', '')
+                    cve['affected_versions'] = s.get('affected_versions', '')
+                    cve['conditions'] = s.get('conditions', '')
                     cve['impact'] = s.get('impact', '')
-                    cve['component'] = s.get('component', '')
+                    cve['attack_scenario'] = s.get('attack_scenario', '')
     except Exception as e:
         pass
     

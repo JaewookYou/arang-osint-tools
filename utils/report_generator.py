@@ -771,22 +771,50 @@ REPORT_TEMPLATE = """
                                 <tr class="cve-detail" style="display: none;">
                                     <td colspan="7" style="padding: 15px 20px; background: #1e1e1e;">
                                         {% if cve.korean_summary %}
-                                        <div style="margin-bottom: 12px; padding: 10px; background: #2a2a2a; border-radius: 6px; border-left: 3px solid #4a9eff;">
-                                            <strong style="color: #4a9eff;">🇰🇷 한국어 요약</strong><br>
-                                            {% if cve.vuln_type %}<span class="badge badge-info" style="margin: 5px 0;">{{ cve.vuln_type }}</span>{% endif %}
-                                            {% if cve.component %}<span class="badge" style="background: #555; margin: 5px 0;">{{ cve.component }}</span>{% endif %}<br>
-                                            <p style="margin-top: 8px; line-height: 1.6;">{{ cve.korean_summary }}</p>
+                                        <div style="margin-bottom: 15px; padding: 15px; background: #2a2a2a; border-radius: 8px; border-left: 4px solid #4a9eff;">
+                                            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                                                <strong style="color: #4a9eff; font-size: 1.1rem;">🇰🇷 한국어 분석</strong>
+                                                {% if cve.vuln_type %}<span class="badge badge-danger">{{ cve.vuln_type }}</span>{% endif %}
+                                            </div>
+                                            
+                                            <p style="margin: 10px 0; line-height: 1.8; font-size: 0.95rem;">{{ cve.korean_summary }}</p>
+                                            
+                                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px;">
+                                                {% if cve.affected_versions %}
+                                                <div style="background: #333; padding: 10px; border-radius: 6px;">
+                                                    <strong style="color: #ff9800;">📌 영향받는 버전</strong>
+                                                    <p style="margin: 5px 0 0 0; color: #eee;">{{ cve.affected_versions }}</p>
+                                                </div>
+                                                {% endif %}
+                                                {% if cve.conditions %}
+                                                <div style="background: #333; padding: 10px; border-radius: 6px;">
+                                                    <strong style="color: #ff9800;">⚙️ 발동 조건</strong>
+                                                    <p style="margin: 5px 0 0 0; color: #eee;">{{ cve.conditions }}</p>
+                                                </div>
+                                                {% endif %}
+                                            </div>
+                                            
                                             {% if cve.impact %}
-                                            <p style="margin-top: 5px; color: #ff6b6b;"><strong>⚠️ 영향:</strong> {{ cve.impact }}</p>
+                                            <div style="margin-top: 10px; padding: 10px; background: rgba(255, 107, 107, 0.1); border-radius: 6px; border: 1px solid #ff6b6b;">
+                                                <strong style="color: #ff6b6b;">⚠️ 공격 성공 시 영향</strong>
+                                                <p style="margin: 5px 0 0 0; color: #ffcccc;">{{ cve.impact }}</p>
+                                            </div>
+                                            {% endif %}
+                                            
+                                            {% if cve.attack_scenario %}
+                                            <div style="margin-top: 10px; padding: 10px; background: rgba(255, 152, 0, 0.1); border-radius: 6px; border: 1px solid #ff9800;">
+                                                <strong style="color: #ff9800;">🎯 공격 시나리오</strong>
+                                                <p style="margin: 5px 0 0 0; color: #ffe0b2;">{{ cve.attack_scenario }}</p>
+                                            </div>
                                             {% endif %}
                                         </div>
                                         {% endif %}
-                                        <div>
-                                            <strong>📝 전체 설명</strong><br>
-                                            <p style="margin-top: 8px; line-height: 1.6; color: #ccc;">{{ cve.description }}</p>
-                                        </div>
                                         <div style="margin-top: 10px;">
-                                            <a href="{{ cve.url }}" target="_blank" class="tab-btn" style="font-size: 0.8rem;">🔗 상세 정보 보기</a>
+                                            <strong style="color: #888;">📝 원문 설명 (English)</strong>
+                                            <p style="margin-top: 8px; line-height: 1.6; color: #aaa; font-size: 0.9rem;">{{ cve.description }}</p>
+                                        </div>
+                                        <div style="margin-top: 15px;">
+                                            <a href="{{ cve.url }}" target="_blank" class="tab-btn" style="font-size: 0.8rem;">🔗 NVD에서 상세 정보 보기</a>
                                         </div>
                                     </td>
                                 </tr>
