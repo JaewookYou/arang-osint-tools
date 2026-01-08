@@ -671,51 +671,109 @@ REPORT_TEMPLATE = """
             <!-- CVEs Tab -->
             <div id="cves" class="tab-content">
                 <h2>🔥 알려진 취약점 (CVE)</h2>
-                <div class="controls">
-                    <div class="search-box">
-                        <input type="text" id="cve-search" placeholder="CVE 검색..." onkeyup="filterTable('cves-table', 'cve-search')">
-                    </div>
-                    <select class="filter-select" onchange="filterCVEBySeverity(this.value)">
-                        <option value="">모든 심각도</option>
-                        <option value="critical">Critical (9.0+)</option>
-                        <option value="high">High (7.0-8.9)</option>
-                        <option value="medium">Medium (4.0-6.9)</option>
-                        <option value="low">Low (0.1-3.9)</option>
-                    </select>
-                </div>
                 
-                {% if cve_results %}
-                <table class="data-table" id="cves-table">
-                    <thead>
-                        <tr>
-                            <th>CVE ID</th>
-                            <th>제품</th>
-                            <th>CVSS</th>
-                            <th>심각도</th>
-                            <th>발견 위치</th>
-                            <th>설명</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for cve in cve_results %}
-                        <tr data-severity="{{ cve.severity }}">
-                            <td><a href="{{ cve.url }}" target="_blank">{{ cve.cve_id }}</a></td>
-                            <td><strong>{{ cve.product }}</strong>{% if cve.version %} {{ cve.version }}{% endif %}</td>
-                            <td>{{ cve.cvss_score or '-' }}</td>
-                            <td>
-                                <span class="badge {{ 'badge-danger' if cve.severity in ['critical', 'high'] else 'badge-warning' if cve.severity == 'medium' else 'badge-info' }}">
-                                    {{ cve.severity|upper }}
-                                </span>
-                            </td>
-                            <td style="font-size: 0.85rem;">{{ cve.detected_on }}</td>
-                            <td style="font-size: 0.85rem; max-width: 300px;">{{ cve.description[:150] }}{% if cve.description|length > 150 %}...{% endif %}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-                {% else %}
-                <p class="empty-state">발견된 CVE가 없습니다. ✅</p>
+                {% if llm_analysis and llm_analysis.priority_cves %}
+                <!-- LLM Priority CVEs -->
+                <div class="section" style="background: linear-gradient(135deg, #ff6b6b20, #ff8e5320); border-left: 4px solid #ff6b6b;">
+                    <h3>🎯 우선순위 CVE (LLM 분석)</h3>
+                    <p style="color: #888; margin-bottom: 15px;">실제 공격 가능성 기준으로 정렬됨</p>
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>CVE ID</th><th>이유</th><th>익스플로잇</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for pcve in llm_analysis.priority_cves %}
+                            <tr>
+                                <td><a href="https://nvd.nist.gov/vuln/detail/{{ pcve.id }}" target="_blank">{{ pcve.id }}</a></td>
+                                <td>{{ pcve.reason }}</td>
+                                <td>{{ '✅ 있음' if pcve.exploit_available else '❓ 미확인' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    
+                    {% if llm_analysis.attack_vectors %}
+                    <div style="margin-top: 15px;">
+                        <strong>🗡️ 공격 벡터:</strong>
+                        <ul style="margin: 10px 0;">
+                            {% for vector in llm_analysis.attack_vectors %}
+                            <li>{{ vector }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+                    
+                    {% if llm_analysis.mitigations %}
+                    <div style="margin-top: 15px;">
+                        <strong>🛡️ 권장 대응:</strong>
+                        <ul style="margin: 10px 0;">
+                            {% for mit in llm_analysis.mitigations %}
+                            <li>{{ mit }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+                </div>
                 {% endif %}
+                
+                <!-- All CVEs Section -->
+                <div class="section">
+                    <div class="controls">
+                        <div class="search-box">
+                            <input type="text" id="cve-search" placeholder="CVE 검색..." onkeyup="filterTable('cves-table', 'cve-search')">
+                        </div>
+                        <select class="filter-select" onchange="filterCVEBySeverity(this.value)">
+                            <option value="">모든 심각도</option>
+                            <option value="critical">Critical (9.0+)</option>
+                            <option value="high">High (7.0-8.9)</option>
+                            <option value="medium">Medium (4.0-6.9)</option>
+                            <option value="low">Low (0.1-3.9)</option>
+                        </select>
+                        <button class="tab-btn" onclick="toggleAllCVEs()" id="cve-toggle-btn">📋 전체 CVE 펼치기 ({{ cve_results|length }}개)</button>
+                    </div>
+                    
+                    {% if cve_results %}
+                    <div id="cve-summary" style="margin: 15px 0; padding: 10px; background: #2a2a2a; border-radius: 8px;">
+                        <strong>요약:</strong> 총 {{ cve_results|length }}개 CVE 발견 
+                        (Critical: {{ cve_results|selectattr('severity', 'equalto', 'critical')|list|length }}, 
+                        High: {{ cve_results|selectattr('severity', 'equalto', 'high')|list|length }},
+                        Medium: {{ cve_results|selectattr('severity', 'equalto', 'medium')|list|length }})
+                    </div>
+                    
+                    <div id="cve-full-table" style="display: block;">
+                        <table class="data-table" id="cves-table">
+                            <thead>
+                                <tr>
+                                    <th>CVE ID</th>
+                                    <th>제품</th>
+                                    <th>CVSS</th>
+                                    <th>심각도</th>
+                                    <th>소스</th>
+                                    <th>설명</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for cve in cve_results %}
+                                <tr data-severity="{{ cve.severity }}">
+                                    <td><a href="{{ cve.url }}" target="_blank">{{ cve.cve_id }}</a></td>
+                                    <td><strong>{{ cve.product }}</strong>{% if cve.version %} {{ cve.version }}{% endif %}</td>
+                                    <td>{{ cve.cvss_score or '-' }}</td>
+                                    <td>
+                                        <span class="badge {{ 'badge-danger' if cve.severity in ['critical', 'high'] else 'badge-warning' if cve.severity == 'medium' else 'badge-info' }}">
+                                            {{ cve.severity|upper }}
+                                        </span>
+                                    </td>
+                                    <td style="font-size: 0.8rem;">{{ cve.source or 'NVD' }}</td>
+                                    <td style="font-size: 0.85rem; max-width: 300px;">{{ cve.description[:120] }}{% if cve.description|length > 120 %}...{% endif %}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="empty-state">발견된 CVE가 없습니다. ✅</p>
+                    {% endif %}
+                </div>
             </div>
             
             <!-- Ports Tab -->
@@ -997,6 +1055,19 @@ REPORT_TEMPLATE = """
             });
         }
         
+        // Toggle CVE table visibility
+        function toggleAllCVEs() {
+            const table = document.getElementById('cve-full-table');
+            const btn = document.getElementById('cve-toggle-btn');
+            if (table.style.display === 'none') {
+                table.style.display = 'block';
+                btn.textContent = '📋 전체 CVE 접기';
+            } else {
+                table.style.display = 'none';
+                btn.textContent = '📋 전체 CVE 펼치기';
+            }
+        }
+        
         // Modal
         function openModal(src) {
             document.getElementById('modalImage').src = src;
@@ -1012,9 +1083,10 @@ REPORT_TEMPLATE = """
             if (e.key === 'Escape') closeModal();
         });
         
-        // Auto-expand first host
-        const firstHost = document.querySelector('.host-body');
-        if (firstHost) firstHost.classList.add('expanded');
+        // Auto-expand ALL hosts (not just first)
+        document.querySelectorAll('.host-body').forEach(body => {
+            body.classList.add('expanded');
+        });
     </script>
 </body>
 </html>
@@ -1125,6 +1197,7 @@ def generate_report(state: ScanState) -> dict:
             hosts_data=hosts_data,
             tech_results=state.get('tech_results', []),
             cve_results=state.get('cve_results', []),
+            llm_analysis=state.get('llm_analysis', {}),
             open_ports=state.get('open_ports', []),
             discovered_paths=state.get('discovered_paths', []),
             vulnerabilities=state.get('vulnerabilities', []),
