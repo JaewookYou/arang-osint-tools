@@ -278,36 +278,86 @@ def main():
     # 초기 상태 생성
     initial_state = create_initial_state(str(input_file.absolute()))
     
-    print_status("스캔 시작!", "success")
-    print("-" * 60)
+    # Import progress utilities
+    from utils.progress import Spinner, section, status as prog_status, substep
+    
+    print()
+    print("=" * 60)
+    print("  🚀 스캔 시작")
+    print("=" * 60)
+    
+    # Node descriptions
+    NODE_INFO = {
+        'parse_input': ('📝', '입력 파싱', '타겟 도메인/IP 분석'),
+        'scan_subdomains': ('🔍', '서브도메인 스캔', 'subfinder, sublist3r, shodan'),
+        'discover_hosts': ('🌐', '호스트 발견', 'TCP/SYN 프로브'),
+        'scan_ports': ('🔌', '포트 스캔', f'{config.PORT_SCAN_MODE} 포트'),
+        'detect_tech': ('🔧', '기술 스택 탐지', 'Wappalyzer, WebTech'),
+        'lookup_cves': ('🔥', 'CVE 조회', 'NVD, OSV, CISA-KEV'),
+        'scan_directories': ('📁', '디렉터리 스캔', 'dirsearch'),
+        'run_nuclei': ('⚠️', '취약점 스캔', 'nuclei templates'),
+        'take_screenshots': ('📸', '스크린샷', 'Selenium'),
+        'generate_report': ('📊', '리포트 생성', 'HTML 리포트'),
+    }
     
     try:
         # 워크플로우 실행
         final_state = None
         for output in app.stream(initial_state):
-            # 각 노드의 실행 결과 출력
             for node_name, node_output in output.items():
-                if args.verbose:
-                    logs = node_output.get('logs', [])
-                    for log in logs:
-                        print_status(log, "info")
-                    
-                    errors = node_output.get('errors', [])
-                    for error in errors:
-                        print_status(error, "error")
-                else:
-                    # 간단한 진행 상태만 출력
-                    print_status(f"[{node_name}] 완료", "progress")
+                icon, title, desc = NODE_INFO.get(node_name, ('•', node_name, ''))
+                
+                # Start spinner for this node
+                spinner = Spinner(f"{title} - {desc}")
+                spinner.start()
+                
+                # Process output
+                logs = node_output.get('logs', [])
+                errors = node_output.get('errors', [])
+                
+                # Stop spinner with result count
+                result_counts = []
+                if 'subdomains' in node_output and node_output['subdomains']:
+                    result_counts.append(f"서브도메인 {len(node_output['subdomains'])}개")
+                if 'alive_hosts' in node_output and node_output['alive_hosts']:
+                    result_counts.append(f"호스트 {len(node_output['alive_hosts'])}개")
+                if 'open_ports' in node_output and node_output['open_ports']:
+                    result_counts.append(f"포트 {len(node_output['open_ports'])}개")
+                if 'web_servers' in node_output and node_output['web_servers']:
+                    result_counts.append(f"웹서버 {len(node_output['web_servers'])}개")
+                if 'tech_results' in node_output and node_output['tech_results']:
+                    tech_count = sum(len(r.get('technologies', [])) for r in node_output['tech_results'])
+                    result_counts.append(f"기술 {tech_count}개")
+                if 'cve_results' in node_output and node_output['cve_results']:
+                    result_counts.append(f"CVE {len(node_output['cve_results'])}개")
+                if 'discovered_paths' in node_output and node_output['discovered_paths']:
+                    result_counts.append(f"경로 {len(node_output['discovered_paths'])}개")
+                if 'vulnerabilities' in node_output and node_output['vulnerabilities']:
+                    result_counts.append(f"취약점 {len(node_output['vulnerabilities'])}개")
+                if 'screenshots' in node_output and node_output['screenshots']:
+                    result_counts.append(f"스크린샷 {len(node_output['screenshots'])}개")
+                
+                result_str = " | ".join(result_counts) if result_counts else "완료"
+                spinner.stop(success=len(errors) == 0, message=f"{icon} {title}: {result_str}")
+                
+                # Show substeps in verbose mode
+                if args.verbose and logs:
+                    for log in logs[-3:]:  # Show last 3 logs
+                        # Clean log prefix
+                        log_clean = log.split(']')[-1].strip() if ']' in log else log
+                        print(f"      └─ {log_clean}")
                 
                 final_state = node_output
         
-        print("-" * 60)
+        print()
+        print("=" * 60)
         
         # 결과 요약
         if final_state and final_state.get('report_path'):
-            print_status(f"리포트 생성 완료: {final_state['report_path']}", "success")
+            print(f"  📊 리포트: {final_state['report_path']}")
         
-        print_status("스캔 완료!", "success")
+        print("  ✅ 스캔 완료!")
+        print("=" * 60)
         
     except KeyboardInterrupt:
         print_status("사용자에 의해 중단됨", "warning")
