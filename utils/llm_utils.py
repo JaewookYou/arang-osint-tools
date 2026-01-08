@@ -159,23 +159,17 @@ class OpenAIProvider(LLMProvider):
 # User-friendly name -> (provider, actual_api_model_name)
 MODEL_MAPPINGS = {
     # Gemini (Google AI)
-    "gemini-3.0-pro": ("gemini", "gemini-3-pro-preview"),
-    "gemini-2.5-flash": ("gemini", "gemini-2.5-flash-preview-05-20"),
-    "gemini-2.0-flash": ("gemini", "gemini-2.0-flash"),
-    "gemini-1.5-pro": ("gemini", "gemini-1.5-pro"),
-    "gemini-1.5-flash": ("gemini", "gemini-1.5-flash"),
+    "gemini-3-pro": ("gemini", "gemini-3-pro-preview"),
+    "gemini-3-flash": ("gemini", "gemini-3-flash-preview"),
+    "gemini-2.5-flash": ("gemini", "gemini-2.5-flash"),
+    "gemini-2.5-pro": ("gemini", "gemini-2.5-pro"),
     # Anthropic Claude
-    "claude-opus-4": ("anthropic", "claude-opus-4-20250514"),
-    "claude-sonnet-4": ("anthropic", "claude-sonnet-4-20250514"),
-    "claude-3.5-sonnet": ("anthropic", "claude-3-5-sonnet-20241022"),
-    "claude-3-opus": ("anthropic", "claude-3-opus-20240229"),
+    "claude-opus-4": ("anthropic", "claude-opus-4-5-20251101"),
+    "claude-sonnet-4": ("anthropic", "claude-sonnet-4-5-20250929"),
     # OpenAI GPT
-    "gpt-4.1": ("openai", "gpt-4.1"),
-    "gpt-4o": ("openai", "gpt-4o"),
-    "gpt-4-turbo": ("openai", "gpt-4-turbo"),
-    "gpt-4": ("openai", "gpt-4"),
-    "o3": ("openai", "o3"),
-    "o4-mini": ("openai", "o4-mini"),
+    "gpt-5.2-pro": ("openai", "gpt-5.2-pro"),
+    "gpt-5.2": ("openai", "gpt-5.2"),
+    "gpt-5-nano": ("openai", "gpt-5-nano"),
 }
 
 
@@ -347,6 +341,7 @@ Provide:
         return provider.generate(prompt, CVE_ANALYSIS_SYSTEM_PROMPT)
     except:
         return ""
+
 def summarize_cves_korean(cves: List[Dict]) -> List[Dict]:
     """
     Generate Korean summaries for CVEs using LLM.

@@ -14,6 +14,13 @@ LangGraph 기반 모의해킹 정보수집 자동화 도구
     192.168.1.1
     10.0.0.0/24
 """
+import warnings
+# Suppress noisy warnings from dependencies
+warnings.filterwarnings("ignore", category=UserWarning, module="Wappalyzer")
+warnings.filterwarnings("ignore", category=UserWarning, module="urllib3")
+warnings.filterwarnings("ignore", message=".*pkg_resources.*")
+warnings.filterwarnings("ignore", message=".*NotOpenSSLWarning.*")
+
 import argparse
 import sys
 from pathlib import Path
