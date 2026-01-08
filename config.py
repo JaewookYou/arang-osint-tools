@@ -1,8 +1,28 @@
 """
 Red Iris Info Gather - Configuration Settings
+
+Loads configuration from environment variables and .env file.
 """
 import os
 from pathlib import Path
+
+# Load .env file if exists
+def load_dotenv():
+    """Load environment variables from .env file"""
+    env_file = Path(__file__).parent / ".env"
+    if env_file.exists():
+        with open(env_file) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, _, value = line.partition('=')
+                    key = key.strip()
+                    value = value.strip().strip('"').strip("'")
+                    if key and value:
+                        os.environ.setdefault(key, value)
+
+# Load .env on module import
+load_dotenv()
 
 # Base paths
 BASE_DIR = Path(__file__).parent.absolute()
@@ -20,16 +40,21 @@ SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 TOOLS_BIN_DIR.mkdir(parents=True, exist_ok=True)
 
-# API Keys
+# ============================================
+# API Keys (loaded from .env or environment)
+# ============================================
 SHODAN_API_KEY = os.environ.get("SHODAN_API_KEY", "")
+NVD_API_KEY = os.environ.get("NVD_API_KEY", "")
 
+# ============================================
 # Scan settings
-SCAN_TIMEOUT = 2  # seconds for socket connections
-MAX_THREADS = 100  # max concurrent threads for scanning
+# ============================================
+SCAN_TIMEOUT = int(os.environ.get("SCAN_TIMEOUT", "2"))
+MAX_THREADS = int(os.environ.get("MAX_THREADS", "100"))
 HOST_DISCOVERY_PORTS = [80, 443, 22, 21, 8080, 8443]
 
 # Port scan modes
-PORT_SCAN_MODE = "top100"  # Default: "top100" or "top1000"
+PORT_SCAN_MODE = os.environ.get("PORT_SCAN_MODE", "top100")
 
 # Top 100 well-known ports
 TOP_100_PORTS = [
@@ -127,6 +152,9 @@ TOP_1000_PORTS = [
     64623, 64680, 65000, 65129, 65389
 ]
 
+# Full port range (1-65535)
+FULL_PORTS = list(range(1, 65536))
+
 # Active ports (set by CLI option)
 WELLKNOWN_PORTS = TOP_100_PORTS
 
@@ -140,6 +168,9 @@ def set_port_mode(mode: str):
     if mode == "top1000":
         WELLKNOWN_PORTS = TOP_1000_PORTS
         PORT_SCAN_MODE = "top1000"
+    elif mode == "full":
+        WELLKNOWN_PORTS = FULL_PORTS
+        PORT_SCAN_MODE = "full"
     else:
         WELLKNOWN_PORTS = TOP_100_PORTS
         PORT_SCAN_MODE = "top100"
@@ -200,3 +231,17 @@ def check_tools_installed() -> dict:
         'sublist3r': SUBLIST3R_SCRIPT.exists(),
         'nmap': Path(NMAP_PATH).exists() if NMAP_PATH != str(TOOLS_BIN_DIR / "nmap") else False,
     }
+
+
+def print_config():
+    """Print current configuration for debugging"""
+    print("=" * 50)
+    print("Red Iris Info Gather - Configuration")
+    print("=" * 50)
+    print(f"Port Scan Mode: {PORT_SCAN_MODE}")
+    print(f"Ports to scan: {len(WELLKNOWN_PORTS)}")
+    print(f"Shodan API Key: {'Set' if SHODAN_API_KEY else 'Not set'}")
+    print(f"NVD API Key: {'Set' if NVD_API_KEY else 'Not set'}")
+    print(f"Max Threads: {MAX_THREADS}")
+    print(f"Scan Timeout: {SCAN_TIMEOUT}s")
+    print("=" * 50)

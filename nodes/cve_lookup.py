@@ -18,9 +18,11 @@ import config
 # Cache for CVE lookups (product -> CVEs)
 _cve_cache: Dict[str, List[Dict]] = {}
 
-# Rate limiting for NVD API (5 requests per 30 seconds without API key)
+# Rate limiting for NVD API
+# Without key: 5 requests per 30 seconds (6s delay)
+# With key: 50 requests per 30 seconds (0.6s delay)
 _last_request_time = 0
-_request_interval = 6  # seconds between requests
+_request_interval = 0.6 if config.NVD_API_KEY else 6
 
 
 def normalize_product_name(name: str) -> str:
@@ -67,12 +69,19 @@ def search_nvd_cves(product: str, version: Optional[str] = None, max_results: in
         end_date = datetime.now()
         start_date = end_date - timedelta(days=730)  # 2 years
         
-        results = nvdlib.searchCVE(
-            keywordSearch=keyword,
-            pubStartDate=start_date,
-            pubEndDate=end_date,
-            limit=max_results
-        )
+        # Build search parameters
+        search_params = {
+            'keywordSearch': keyword,
+            'pubStartDate': start_date,
+            'pubEndDate': end_date,
+            'limit': max_results
+        }
+        
+        # Add API key if available (faster rate limiting)
+        if config.NVD_API_KEY:
+            search_params['key'] = config.NVD_API_KEY
+        
+        results = nvdlib.searchCVE(**search_params)
         
         for cve in results:
             cve_id = cve.id

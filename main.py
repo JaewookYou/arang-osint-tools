@@ -200,9 +200,9 @@ def main():
     
     parser.add_argument(
         "--ports",
-        choices=["top100", "top1000"],
+        choices=["top100", "top1000", "full"],
         default="top100",
-        help="포트 스캔 범위 (기본값: top100)"
+        help="포트 스캔 범위: top100(기본), top1000, full(1-65535)"
     )
     
     args = parser.parse_args()
