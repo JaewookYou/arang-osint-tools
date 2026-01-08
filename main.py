@@ -237,14 +237,15 @@ def main():
     parser.add_argument(
         "--ports",
         choices=["top100", "top1000", "full"],
-        default="top100",
+        default=None,  # Use .env PORT_SCAN_MODE if not specified
         help="포트 스캔 범위: top100(기본), top1000, full(1-65535)"
     )
     
     args = parser.parse_args()
     
-    # Set port scan mode
-    config.set_port_mode(args.ports)
+    # Set port scan mode (CLI > .env > default)
+    port_mode = args.ports if args.ports else config.PORT_SCAN_MODE
+    config.set_port_mode(port_mode)
     
     # 배너 및 설정 출력
     print_banner()
