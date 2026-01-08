@@ -1,11 +1,11 @@
 #!/bin/bash
 # Red Iris Info Gather - Initial Setup Script
-# Sets up setuid bits for network tools to run without sudo
 #
-# SECURITY WARNING: This script modifies system binaries to run with elevated privileges.
-# Only run this on dedicated security testing machines.
+# 이 스크립트는 두 가지 모드를 지원합니다:
+# 1. Root 실행 모드 (권장): sudo로 직접 실행
+# 2. Non-root 모드: setcap으로 권한 설정 후 일반 사용자로 실행
 #
-# Usage: sudo ./setup.sh
+# Usage: ./setup.sh
 
 set -e
 
@@ -32,13 +32,6 @@ print_error() {
     echo -e "${RED}[✗]${NC} $1"
 }
 
-# Check if running as root
-if [[ $EUID -ne 0 ]]; then
-    print_error "This script must be run as root (use sudo)"
-    echo "Usage: sudo ./setup.sh"
-    exit 1
-fi
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR"
 TOOLS_BIN="$PROJECT_DIR/tools/bin"
@@ -46,161 +39,134 @@ TOOLS_BIN="$PROJECT_DIR/tools/bin"
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║   🔴 RED IRIS INFO GATHER - Initial Setup                    ║"
-echo "║   Setting up permissions for network scanning tools          ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
 # ============================================
-# 1. Set capabilities on local tools (preferred over setuid)
+# Ask user about execution mode
 # ============================================
-print_status "Setting capabilities on local tools..."
-
-# Check if setcap is available
-if command -v setcap &> /dev/null; then
-    # naabu - needs raw socket access
-    if [ -f "$TOOLS_BIN/naabu" ]; then
-        setcap cap_net_raw,cap_net_admin+eip "$TOOLS_BIN/naabu" 2>/dev/null || \
-        chmod u+s "$TOOLS_BIN/naabu"
-        print_success "naabu: capabilities set"
-    fi
-    
-    # subfinder - no special permissions needed
-    if [ -f "$TOOLS_BIN/subfinder" ]; then
-        print_success "subfinder: no special permissions needed"
-    fi
-    
-    # nuclei - no special permissions needed
-    if [ -f "$TOOLS_BIN/nuclei" ]; then
-        print_success "nuclei: no special permissions needed"
-    fi
-    
-    # httpx - no special permissions needed
-    if [ -f "$TOOLS_BIN/httpx" ]; then
-        print_success "httpx: no special permissions needed"
-    fi
-else
-    print_warning "setcap not found, using setuid instead"
-    
-    # Determine the correct group for root ownership (macOS uses wheel, Linux uses root)
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        ROOT_GROUP="wheel"
-    else
-        ROOT_GROUP="root"
-    fi
-    
-    # Fallback to setuid
-    if [ -f "$TOOLS_BIN/naabu" ]; then
-        chmod u+s "$TOOLS_BIN/naabu"
-        chown root:$ROOT_GROUP "$TOOLS_BIN/naabu"
-        print_success "naabu: setuid bit set"
-    fi
-fi
-
-# ============================================
-# 2. Set capabilities on system nmap
-# ============================================
-print_status "Setting up nmap permissions..."
-
-NMAP_PATH=$(which nmap 2>/dev/null || echo "")
-
-if [ -n "$NMAP_PATH" ] && [ -f "$NMAP_PATH" ]; then
-    if command -v setcap &> /dev/null; then
-        # Set capabilities (preferred, more secure than setuid)
-        setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip "$NMAP_PATH" 2>/dev/null && \
-        print_success "nmap: capabilities set on $NMAP_PATH" || \
-        print_warning "Could not set capabilities on nmap (may need to disable SIP on macOS)"
-    else
-        print_warning "setcap not available, nmap will require sudo"
-    fi
-else
-    print_warning "nmap not found in PATH"
-fi
-
-# ============================================
-# 3. Create .env file if not exists
-# ============================================
-print_status "Setting up environment configuration..."
-
-ENV_FILE="$PROJECT_DIR/.env"
-ENV_EXAMPLE="$PROJECT_DIR/.env.example"
-
-if [ ! -f "$ENV_FILE" ]; then
-    if [ -f "$ENV_EXAMPLE" ]; then
-        cp "$ENV_EXAMPLE" "$ENV_FILE"
-        chmod 600 "$ENV_FILE"
-        print_success "Created .env from .env.example"
-        print_warning "Please edit .env and add your API keys"
-    else
-        print_warning ".env.example not found"
-    fi
-else
-    print_success ".env already exists"
-fi
-
-# ============================================
-# 4. Set correct permissions on project files
-# ============================================
-print_status "Setting project file permissions..."
-
-# Make scripts executable
-chmod +x "$PROJECT_DIR/tools/install_tools.sh" 2>/dev/null || true
-chmod +x "$PROJECT_DIR/setup.sh" 2>/dev/null || true
-chmod +x "$PROJECT_DIR/main.py" 2>/dev/null || true
-
-# Protect .env file
-chmod 600 "$PROJECT_DIR/.env" 2>/dev/null || true
-
-print_success "Permissions set"
-
-# ============================================
-# 5. Verify setup
-# ============================================
+echo "스캔 도구 실행 방식을 선택하세요:"
 echo ""
-print_status "Verifying setup..."
+echo "  [1] Root 실행 (권장)"
+echo "      - sudo python main.py로 실행"
+echo "      - SYN 스캔 사용 (빠르고 스텔시)"
+echo "      - 별도 설정 불필요"
 echo ""
-echo "Tool Status:"
-echo "─────────────────────────────────────"
+echo "  [2] Non-root 실행 (setcap 설정)"
+echo "      - 일반 사용자로 실행 가능"
+echo "      - setcap으로 naabu에 권한 부여"
+echo "      - Linux에서만 작동 (macOS 미지원)"
+echo ""
+read -p "선택 (1 또는 2, 기본값=1): " choice
+choice=${choice:-1}
 
-verify_tool() {
-    local tool_path="$1"
-    local tool_name="$2"
+if [ "$choice" == "1" ]; then
+    # ============================================
+    # Mode 1: Root execution (recommended)
+    # ============================================
+    echo ""
+    print_success "Root 실행 모드를 선택했습니다."
+    echo ""
+    print_status "설정 중..."
     
-    if [ -f "$tool_path" ]; then
-        local perms=$(ls -la "$tool_path" | awk '{print $1}')
-        local caps=$(getcap "$tool_path" 2>/dev/null || echo "no caps")
-        
-        if echo "$perms" | grep -q "s"; then
-            echo -e "  ${GREEN}✓${NC} $tool_name: setuid enabled"
-        elif echo "$caps" | grep -q "cap_net"; then
-            echo -e "  ${GREEN}✓${NC} $tool_name: capabilities set"
-        else
-            echo -e "  ${YELLOW}!${NC} $tool_name: may need sudo"
+    # Create .env file if not exists
+    if [ ! -f "$PROJECT_DIR/.env" ]; then
+        if [ -f "$PROJECT_DIR/.env.example" ]; then
+            cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
+            chmod 600 "$PROJECT_DIR/.env"
+            print_success ".env 파일 생성됨"
         fi
     else
-        echo -e "  ${RED}✗${NC} $tool_name: not found"
+        print_success ".env 파일 이미 존재"
     fi
-}
+    
+    # Make scripts executable
+    chmod +x "$PROJECT_DIR/tools/install_tools.sh" 2>/dev/null || true
+    chmod +x "$PROJECT_DIR/main.py" 2>/dev/null || true
+    
+    echo ""
+    echo "─────────────────────────────────────"
+    print_success "설정 완료!"
+    echo ""
+    echo "사용법:"
+    echo "  1. API 키 설정 (선택사항):"
+    echo "     nano $PROJECT_DIR/.env"
+    echo ""
+    echo "  2. 실행 (sudo 필수):"
+    echo -e "     ${GREEN}sudo python main.py --input targets.txt --verbose${NC}"
+    echo ""
+    echo "─────────────────────────────────────"
 
-verify_tool "$TOOLS_BIN/naabu" "naabu (local)"
-verify_tool "$NMAP_PATH" "nmap (system)"
-
-echo ""
-echo "─────────────────────────────────────"
-print_success "Setup complete!"
-echo ""
-echo "Next steps:"
-echo "  1. Edit .env with your API keys:"
-echo "     nano $PROJECT_DIR/.env"
-echo ""
-echo "  2. Run the tool (no sudo needed now):"
-echo "     cd $PROJECT_DIR"
-echo "     source .venv/bin/activate"
-echo "     python main.py --input targets.txt --verbose"
-echo ""
-
-# macOS specific note
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    print_warning "macOS Note: System Integrity Protection (SIP) may prevent"
-    print_warning "setting capabilities on system binaries like nmap."
-    print_warning "The tool will fall back to TCP connect scans if needed."
+elif [ "$choice" == "2" ]; then
+    # ============================================
+    # Mode 2: Non-root with setcap
+    # ============================================
+    echo ""
+    print_status "Non-root 모드를 선택했습니다. setcap 설정을 진행합니다."
+    echo ""
+    
+    # Check if running as root (needed for setcap)
+    if [[ $EUID -ne 0 ]]; then
+        print_error "setcap 설정을 위해 root 권한이 필요합니다."
+        echo "다시 실행하세요: sudo ./setup.sh"
+        exit 1
+    fi
+    
+    # Check OS
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        print_error "macOS는 setcap을 지원하지 않습니다."
+        print_warning "macOS에서는 sudo로 실행하거나 TCP Connect 폴백을 사용하세요."
+        exit 1
+    fi
+    
+    # Check if setcap is available
+    if ! command -v setcap &> /dev/null; then
+        print_error "setcap이 설치되어 있지 않습니다."
+        echo "설치: sudo apt install libcap2-bin (Debian/Ubuntu)"
+        echo "      sudo yum install libcap (RHEL/CentOS)"
+        exit 1
+    fi
+    
+    # Set capabilities on naabu
+    if [ -f "$TOOLS_BIN/naabu" ]; then
+        setcap cap_net_raw,cap_net_admin+eip "$TOOLS_BIN/naabu"
+        print_success "naabu: capabilities 설정 완료"
+    else
+        print_warning "naabu 바이너리를 찾을 수 없습니다."
+        print_warning "먼저 ./tools/install_tools.sh를 실행하세요."
+    fi
+    
+    # Set capabilities on system nmap if exists
+    NMAP_PATH=$(which nmap 2>/dev/null || echo "")
+    if [ -n "$NMAP_PATH" ] && [ -f "$NMAP_PATH" ]; then
+        setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip "$NMAP_PATH" 2>/dev/null && \
+        print_success "nmap: capabilities 설정 완료" || \
+        print_warning "nmap capabilities 설정 실패 (TCP 폴백 사용)"
+    fi
+    
+    # Create .env file
+    if [ ! -f "$PROJECT_DIR/.env" ]; then
+        if [ -f "$PROJECT_DIR/.env.example" ]; then
+            cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
+            chmod 600 "$PROJECT_DIR/.env"
+            print_success ".env 파일 생성됨"
+        fi
+    fi
+    
+    echo ""
+    echo "─────────────────────────────────────"
+    print_success "설정 완료!"
+    echo ""
+    echo "사용법 (sudo 없이):"
+    echo "  1. API 키 설정 (선택사항):"
+    echo "     nano $PROJECT_DIR/.env"
+    echo ""
+    echo "  2. 실행:"
+    echo -e "     ${GREEN}python main.py --input targets.txt --verbose${NC}"
+    echo ""
+    echo "─────────────────────────────────────"
+    
+else
+    print_error "잘못된 선택입니다. 1 또는 2를 입력하세요."
+    exit 1
 fi
