@@ -381,57 +381,65 @@ Provide:
 
 def summarize_cves_korean(cves: List[Dict]) -> List[Dict]:
     """
-    Generate detailed Korean summaries for CVEs using LLM.
-    Includes: affected versions, conditions, impact, attack scenarios.
+    Generate detailed Korean summaries for ALL CVEs using LLM.
+    Focus: Attack perspective only (no mitigations).
+    Includes: exploit links when available.
     """
     provider = get_llm_provider()
     
     if not provider or not cves:
         return cves
     
-    # Prepare CVE data for batch processing
+    # Process ALL CVEs (in batches if needed)
     cve_data = []
-    for cve in cves[:10]:  # Limit to 10 for detailed analysis
+    for cve in cves:  # All CVEs
         cve_data.append({
             "id": cve.get("cve_id"),
             "desc": cve.get("description", ""),
             "product": cve.get("product", ""),
             "version": cve.get("version", ""),
-            "severity": cve.get("severity", ""),
-            "source": cve.get("source", "")
+            "severity": cve.get("severity", "")
         })
     
-    prompt = f"""보안 전문가로서 다음 CVE 목록을 상세히 분석해주세요.
+    prompt = f"""당신은 한국인 모의해킹 전문가입니다. 아래 CVE 목록을 분석하여 **모든 응답을 반드시 한국어로** 작성하세요.
 
-각 CVE에 대해 **반드시** 다음 정보를 한국어로 작성:
-
-1. **vuln_type**: 취약점 유형 (RCE, SSRF, Path Traversal, DoS 등)
-2. **affected_versions**: 영향받는 버전 범위 (예: "2.4.49 ~ 2.4.51", "모든 버전")
-3. **conditions**: 취약점이 발동되는 조건 (예: "mod_cgi 활성화 필요", "기본 설정에서 취약")
-4. **impact**: 공격 성공 시 영향 (서버 완전 장악, 정보 유출 등)
-5. **attack_scenario**: 실제 공격 시나리오 (1-2문장)
-6. **summary_ko**: 전체 요약 (3-4문장의 상세 설명)
-
-CVE 데이터:
+## 분석할 CVE 목록:
 {json.dumps(cve_data, ensure_ascii=False, indent=2)}
 
-JSON 형식으로만 응답 (다른 텍스트 없이):
+## 각 CVE에 대해 다음 정보를 한국어로 작성:
+
+1. **vuln_type**: 취약점 유형 (예: 원격 코드 실행, 경로 탐색, SSRF, DoS)
+2. **affected_versions**: 취약한 버전 범위 (예: "2.4.49 이상 2.4.51 미만")
+3. **conditions**: 공격 성공을 위한 전제 조건 (예: "mod_cgi 활성화 필요", "인증 불필요")
+4. **attack_method**: 구체적인 공격 방법 (1-2문장)
+5. **impact**: 공격 성공 시 결과 (예: "웹 서버 쉘 획득", "민감 파일 유출")
+6. **exploit_url**: 공개된 익스플로잇 코드 URL (있으면 GitHub/exploit-db 링크, 없으면 빈 문자열)
+7. **summary_ko**: 전체 요약 (3-4문장, 공격자 관점에서 상세히)
+
+## 중요 지침:
+- 대응방안/패치 정보는 작성하지 마세요 (공격 관점만)
+- 모든 텍스트는 반드시 한국어로 작성하세요
+- exploit_url은 실제 존재하는 URL만 작성하세요 (확실하지 않으면 빈 문자열)
+
+## JSON 형식으로만 응답:
 {{
     "summaries": [
         {{
-            "id": "CVE-XXXX",
-            "vuln_type": "취약점 유형",
-            "affected_versions": "영향받는 버전",
-            "conditions": "취약점 발동 조건",
-            "impact": "공격 성공 시 영향",
-            "attack_scenario": "공격 시나리오",
-            "summary_ko": "전체 한국어 요약"
+            "id": "CVE-XXXX-XXXXX",
+            "vuln_type": "원격 코드 실행",
+            "affected_versions": "2.4.49 ~ 2.4.51",
+            "conditions": "mod_cgi 활성화, CGI 스크립트 실행 가능",
+            "attack_method": "경로 탐색 문자(%2e%2e/)를 포함한 URL 요청으로 /etc/passwd 접근",
+            "impact": "웹 서버 루트 권한으로 쉘 획득 가능",
+            "exploit_url": "https://github.com/...",
+            "summary_ko": "Apache HTTP Server의 경로 정규화 취약점입니다..."
         }}
     ]
 }}"""
 
-    system_prompt = """당신은 모의해킹 전문가입니다. CVE를 분석하여 실제 침투테스트에 활용할 수 있는 정보를 제공합니다.
-반드시 JSON 형식으로만 응답하세요. 각 필드는 한국어로 작성합니다."""
+    system_prompt = """당신은 한국인 보안 전문가입니다. 
+모든 응답은 반드시 한국어로 작성해야 합니다. 영어로 작성하면 안 됩니다.
+JSON 형식으로만 응답하세요."""
 
     try:
         response = provider.generate(prompt, system_prompt)
@@ -443,7 +451,7 @@ JSON 형식으로만 응답 (다른 텍스트 없이):
             result = json.loads(response[start:end])
             summaries = {s['id']: s for s in result.get('summaries', [])}
             
-            # Add Korean summaries to CVEs
+            # Add Korean summaries to ALL CVEs
             for cve in cves:
                 cve_id = cve.get('cve_id')
                 if cve_id in summaries:
@@ -452,15 +460,27 @@ JSON 형식으로만 응답 (다른 텍스트 없이):
                     cve['vuln_type'] = s.get('vuln_type', '')
                     cve['affected_versions'] = s.get('affected_versions', '')
                     cve['conditions'] = s.get('conditions', '')
+                    cve['attack_method'] = s.get('attack_method', '')
                     cve['impact'] = s.get('impact', '')
-                    cve['attack_scenario'] = s.get('attack_scenario', '')
+                    cve['exploit_url'] = s.get('exploit_url', '')
     except Exception as e:
         pass
     
     return cves
 
 
+def search_exploit_db(cve_id: str) -> str:
+    """Search for exploit links for a CVE"""
+    try:
+        # Try exploit-db API
+        url = f"https://www.exploit-db.com/search?cve={cve_id.replace('CVE-', '')}"
+        return url
+    except:
+        return ""
+
+
 def is_llm_enabled() -> bool:
     """Check if LLM mode is enabled"""
     return os.environ.get("LLM_MODE", "off").lower() == "on" and os.environ.get("LLM_API_KEY", "")
+
 

@@ -794,17 +794,24 @@ REPORT_TEMPLATE = """
                                                 {% endif %}
                                             </div>
                                             
+                                            {% if cve.attack_method %}
+                                            <div style="margin-top: 10px; padding: 10px; background: rgba(76, 175, 80, 0.1); border-radius: 6px; border: 1px solid #4caf50;">
+                                                <strong style="color: #4caf50;">⚔️ 공격 방법</strong>
+                                                <p style="margin: 5px 0 0 0; color: #c8e6c9;">{{ cve.attack_method }}</p>
+                                            </div>
+                                            {% endif %}
+                                            
                                             {% if cve.impact %}
                                             <div style="margin-top: 10px; padding: 10px; background: rgba(255, 107, 107, 0.1); border-radius: 6px; border: 1px solid #ff6b6b;">
-                                                <strong style="color: #ff6b6b;">⚠️ 공격 성공 시 영향</strong>
+                                                <strong style="color: #ff6b6b;">💥 공격 성공 시 영향</strong>
                                                 <p style="margin: 5px 0 0 0; color: #ffcccc;">{{ cve.impact }}</p>
                                             </div>
                                             {% endif %}
                                             
-                                            {% if cve.attack_scenario %}
-                                            <div style="margin-top: 10px; padding: 10px; background: rgba(255, 152, 0, 0.1); border-radius: 6px; border: 1px solid #ff9800;">
-                                                <strong style="color: #ff9800;">🎯 공격 시나리오</strong>
-                                                <p style="margin: 5px 0 0 0; color: #ffe0b2;">{{ cve.attack_scenario }}</p>
+                                            {% if cve.exploit_url %}
+                                            <div style="margin-top: 10px; padding: 10px; background: rgba(156, 39, 176, 0.1); border-radius: 6px; border: 1px solid #9c27b0;">
+                                                <strong style="color: #9c27b0;">🔓 공개 익스플로잇</strong>
+                                                <p style="margin: 5px 0 0 0;"><a href="{{ cve.exploit_url }}" target="_blank" style="color: #ce93d8;">{{ cve.exploit_url }}</a></p>
                                             </div>
                                             {% endif %}
                                         </div>
@@ -813,8 +820,9 @@ REPORT_TEMPLATE = """
                                             <strong style="color: #888;">📝 원문 설명 (English)</strong>
                                             <p style="margin-top: 8px; line-height: 1.6; color: #aaa; font-size: 0.9rem;">{{ cve.description }}</p>
                                         </div>
-                                        <div style="margin-top: 15px;">
-                                            <a href="{{ cve.url }}" target="_blank" class="tab-btn" style="font-size: 0.8rem;">🔗 NVD에서 상세 정보 보기</a>
+                                        <div style="margin-top: 15px; display: flex; gap: 10px;">
+                                            <a href="{{ cve.url }}" target="_blank" class="tab-btn" style="font-size: 0.8rem;">🔗 NVD 상세 정보</a>
+                                            <a href="https://www.exploit-db.com/search?cve={{ cve.cve_id|replace('CVE-', '') }}" target="_blank" class="tab-btn" style="font-size: 0.8rem; background: #9c27b0;">🔍 Exploit-DB 검색</a>
                                         </div>
                                     </td>
                                 </tr>
