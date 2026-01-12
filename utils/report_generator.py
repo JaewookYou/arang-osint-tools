@@ -672,50 +672,6 @@ REPORT_TEMPLATE = """
             <div id="cves" class="tab-content">
                 <h2>🔥 알려진 취약점 (CVE)</h2>
                 
-                {% if llm_analysis and llm_analysis.priority_cves %}
-                <!-- LLM Priority CVEs -->
-                <div class="section" style="background: linear-gradient(135deg, #ff6b6b20, #ff8e5320); border-left: 4px solid #ff6b6b;">
-                    <h3>🎯 우선순위 CVE (LLM 분석)</h3>
-                    <p style="color: #888; margin-bottom: 15px;">실제 공격 가능성 기준으로 정렬됨</p>
-                    <table class="data-table">
-                        <thead>
-                            <tr><th>CVE ID</th><th>이유</th><th>익스플로잇</th></tr>
-                        </thead>
-                        <tbody>
-                            {% for pcve in llm_analysis.priority_cves %}
-                            <tr>
-                                <td><a href="https://nvd.nist.gov/vuln/detail/{{ pcve.id }}" target="_blank">{{ pcve.id }}</a></td>
-                                <td>{{ pcve.reason }}</td>
-                                <td>{{ '✅ 있음' if pcve.exploit_available else '❓ 미확인' }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                    
-                    {% if llm_analysis.attack_vectors %}
-                    <div style="margin-top: 15px;">
-                        <strong>🗡️ 공격 벡터:</strong>
-                        <ul style="margin: 10px 0;">
-                            {% for vector in llm_analysis.attack_vectors %}
-                            <li>{{ vector }}</li>
-                            {% endfor %}
-                        </ul>
-                    </div>
-                    {% endif %}
-                    
-                    {% if llm_analysis.mitigations %}
-                    <div style="margin-top: 15px;">
-                        <strong>🛡️ 권장 대응:</strong>
-                        <ul style="margin: 10px 0;">
-                            {% for mit in llm_analysis.mitigations %}
-                            <li>{{ mit }}</li>
-                            {% endfor %}
-                        </ul>
-                    </div>
-                    {% endif %}
-                </div>
-                {% endif %}
-                
                 <!-- All CVEs Section -->
                 <div class="section">
                     <div class="controls">
@@ -749,6 +705,7 @@ REPORT_TEMPLATE = """
                                     <th>제품</th>
                                     <th>CVSS</th>
                                     <th>심각도</th>
+                                    <th>탐지 위치</th>
                                     <th>소스</th>
                                     <th>설명</th>
                                 </tr>
@@ -765,11 +722,12 @@ REPORT_TEMPLATE = """
                                             {{ cve.severity|upper }}
                                         </span>
                                     </td>
+                                    <td style="font-size: 0.75rem; max-width: 150px; overflow: hidden; text-overflow: ellipsis;">{{ (cve.detected_on or '-') | e }}</td>
                                     <td style="font-size: 0.8rem;">{{ cve.source or 'NVD' }}</td>
-                                    <td style="font-size: 0.85rem; max-width: 300px;">{{ cve.description[:80] }}{% if cve.description|length > 80 %}...{% endif %}</td>
+                                    <td style="font-size: 0.85rem; max-width: 250px;">{{ cve.description[:60] }}{% if cve.description|length > 60 %}...{% endif %}</td>
                                 </tr>
                                 <tr class="cve-detail" style="display: none;">
-                                    <td colspan="7" style="padding: 15px 20px; background: #1e1e1e;">
+                                    <td colspan="8" style="padding: 15px 20px; background: #1e1e1e;">
                                         {% if cve.korean_summary %}
                                         <div style="margin-bottom: 15px; padding: 15px; background: #2a2a2a; border-radius: 8px; border-left: 4px solid #4a9eff;">
                                             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
@@ -854,6 +812,7 @@ REPORT_TEMPLATE = """
                 <table class="data-table" id="ports-table">
                     <thead>
                         <tr>
+                            <th style="width: 40px;"></th>
                             <th>호스트</th>
                             <th>포트</th>
                             <th>서비스</th>
@@ -862,11 +821,22 @@ REPORT_TEMPLATE = """
                     </thead>
                     <tbody>
                         {% for port in open_ports %}
-                        <tr data-service="{{ port.service }}">
-                            <td>{{ port.host }}</td>
+                        <tr data-service="{{ port.service }}" class="port-row" onclick="togglePortDetail(this)">
+                            <td style="text-align: center; cursor: pointer;"><span class="expand-icon">▶</span></td>
+                            <td>{{ port.host | e }}</td>
                             <td>{{ port.port }}</td>
-                            <td>{{ port.service }}</td>
+                            <td>{{ port.service | e }}</td>
                             <td>{{ '✅' if port.is_http else '❌' }}</td>
+                        </tr>
+                        <tr class="port-detail" style="display: none;">
+                            <td colspan="5" style="padding: 0;">
+                                <div style="background: #1a1a1a; padding: 15px;">
+                                    <h4 style="color: #4a9eff; margin: 0 0 10px 0;">📡 Response Preview (~1000 bytes)</h4>
+                                    <div style="background: #2a2a2a; padding: 10px; border-radius: 6px; max-height: 300px; overflow: auto;">
+                                        <pre style="margin: 0; font-size: 0.8rem; color: #ccc; white-space: pre-wrap; font-family: 'Monaco', 'Menlo', monospace;">{{ (port.response_preview or 'No response captured') | e }}</pre>
+                                    </div>
+                                </div>
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -890,7 +860,9 @@ REPORT_TEMPLATE = """
                         <option value="302">302 Redirect</option>
                         <option value="403">403 Forbidden</option>
                     </select>
+                    <button class="tab-btn" onclick="togglePathsView()" id="paths-toggle-btn">📋 전체 데이터 보기</button>
                 </div>
+                <p id="paths-filter-info" style="color: #888; font-size: 0.85rem; margin-bottom: 10px;">유의미한 엔드포인트만 표시 중 (301/403/에러페이지 제외)</p>
                 
                 <table class="data-table" id="paths-table">
                     <thead>
@@ -906,16 +878,16 @@ REPORT_TEMPLATE = """
                     </thead>
                     <tbody>
                         {% for path in discovered_paths %}
-                        <tr data-status="{{ path.status_code }}" class="endpoint-row" onclick="toggleEndpointDetail(this)">
+                        <tr data-status="{{ path.status_code }}" data-meaningful="{{ path.is_meaningful|default(true) }}" class="endpoint-row" onclick="toggleEndpointDetail(this)">
                             <td style="text-align: center; cursor: pointer;"><span class="expand-icon">▶</span></td>
-                            <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;">{{ path.url }}</td>
-                            <td><code>{{ path.path }}</code></td>
+                            <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;">{{ path.url | e }}</td>
+                            <td><code>{{ path.path | e }}</code></td>
                             <td>
                                 <span class="badge {{ 'badge-success' if path.status_code == 200 else 'badge-warning' if path.status_code in [301, 302] else 'badge-danger' if path.status_code == 403 else 'badge-info' }}">
                                     {{ path.status_code }}
                                 </span>
                             </td>
-                            <td style="font-size: 0.8rem; max-width: 150px; overflow: hidden; text-overflow: ellipsis;">{{ path.content_type or '-' }}</td>
+                            <td style="font-size: 0.8rem; max-width: 150px; overflow: hidden; text-overflow: ellipsis;">{{ (path.content_type or '-') | e }}</td>
                             <td>{{ path.content_length }} B</td>
                             <td>{{ path.response_time or '-' }}s</td>
                         </tr>
@@ -927,7 +899,7 @@ REPORT_TEMPLATE = """
                                         <div>
                                             <h4 style="color: #4a9eff; margin: 0 0 10px 0;">📋 Response Headers</h4>
                                             <div style="background: #2a2a2a; padding: 10px; border-radius: 6px; max-height: 300px; overflow: auto;">
-                                                <pre style="margin: 0; font-size: 0.8rem; color: #ccc; white-space: pre-wrap;">{% if path.response_headers %}{% for key, value in path.response_headers.items() %}{{ key }}: {{ value }}
+                                                <pre style="margin: 0; font-size: 0.8rem; color: #ccc; white-space: pre-wrap;">{% if path.response_headers %}{% for key, value in path.response_headers.items() %}{{ key | e }}: {{ value | e }}
 {% endfor %}{% else %}No headers captured{% endif %}</pre>
                                             </div>
                                         </div>
@@ -1195,6 +1167,65 @@ REPORT_TEMPLATE = """
                 }
             }
         }
+        
+        // Toggle individual port detail row
+        function togglePortDetail(row) {
+            const detailRow = row.nextElementSibling;
+            const icon = row.querySelector('.expand-icon');
+            if (detailRow && detailRow.classList.contains('port-detail')) {
+                if (detailRow.style.display === 'none') {
+                    detailRow.style.display = 'table-row';
+                    icon.textContent = '▼';
+                    icon.style.color = '#4a9eff';
+                } else {
+                    detailRow.style.display = 'none';
+                    icon.textContent = '▶';
+                    icon.style.color = '';
+                }
+            }
+        }
+        
+        // Toggle paths view (filtered vs all)
+        let pathsShowAll = false;
+        function togglePathsView() {
+            pathsShowAll = !pathsShowAll;
+            const btn = document.getElementById('paths-toggle-btn');
+            const info = document.getElementById('paths-filter-info');
+            const rows = document.querySelectorAll('#paths-table tbody tr.endpoint-row');
+            
+            if (pathsShowAll) {
+                btn.textContent = '🔍 필터된 데이터 보기';
+                info.textContent = '전체 데이터 표시 중';
+                rows.forEach(row => {
+                    row.style.display = '';
+                    const detail = row.nextElementSibling;
+                    if (detail && detail.classList.contains('endpoint-detail')) {
+                        // Keep detail rows hidden until clicked
+                    }
+                });
+            } else {
+                btn.textContent = '📋 전체 데이터 보기';
+                info.textContent = '유의미한 엔드포인트만 표시 중 (301/403/에러페이지 제외)';
+                rows.forEach(row => {
+                    const meaningful = row.dataset.meaningful;
+                    if (meaningful === 'false' || meaningful === 'False') {
+                        row.style.display = 'none';
+                        const detail = row.nextElementSibling;
+                        if (detail && detail.classList.contains('endpoint-detail')) {
+                            detail.style.display = 'none';
+                        }
+                    } else {
+                        row.style.display = '';
+                    }
+                });
+            }
+        }
+        
+        // Initial filter application
+        document.addEventListener('DOMContentLoaded', function() {
+            togglePathsView();  // Apply initial filter
+            togglePathsView();  // Reset to filtered view
+        });
         
         // Modal
         function openModal(src) {

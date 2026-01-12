@@ -38,7 +38,7 @@ def check_host_alive(host: str, ports: List[int] = None) -> bool:
 
 
 def run_naabu(targets: List[str]) -> List[str]:
-    """Run naabu for fast host discovery"""
+    """Run naabu for fast host discovery - preserves domain names"""
     alive_hosts = []
     
     if not targets:
@@ -50,6 +50,16 @@ def run_naabu(targets: List[str]) -> List[str]:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
             f.write('\n'.join(targets))
             target_file = f.name
+        
+        # Build IP to domain mapping for preserving domain names
+        ip_to_domain = {}
+        for target in targets:
+            try:
+                ip = socket.gethostbyname(target)
+                if ip != target:  # It's a domain, not an IP
+                    ip_to_domain[ip] = target
+            except:
+                pass
         
         # Run naabu with host discovery mode
         result = subprocess.run(
@@ -74,9 +84,18 @@ def run_naabu(targets: List[str]) -> List[str]:
                     host = data.get('host', data.get('ip', ''))
                     if host and host not in seen_hosts:
                         seen_hosts.add(host)
-                        alive_hosts.append(host)
+                        # Preserve domain name if available
+                        if host in ip_to_domain:
+                            alive_hosts.append(ip_to_domain[host])
+                        else:
+                            alive_hosts.append(host)
                 except json.JSONDecodeError:
                     pass
+        
+        # Also add any domains that resolved to IPs found by naabu
+        for ip, domain in ip_to_domain.items():
+            if ip in seen_hosts and domain not in alive_hosts:
+                alive_hosts.append(domain)
         
         # Cleanup
         import os

@@ -110,7 +110,7 @@ SCAN_TIMEOUT=2
 
 | Provider | 모델 |
 |----------|------|
-| **Gemini** | `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.0-flash` |
+| **Gemini** | `gemini-3-pro`, `gemini-3-flash`, `gemini-2.5-pro`, `gemini-2.5-flash` |
 | **Claude** | `claude-opus-4`, `claude-sonnet-4` |
 | **OpenAI** | `gpt-5.2-pro`, `gpt-5.2`, `gpt-5-nano` |
 

@@ -14,6 +14,7 @@ class PortScanResult(TypedDict):
     port: int
     service: Optional[str]
     is_http: bool
+    response_preview: Optional[str]  # First ~1000 bytes with non-ASCII as <XX>
 
 
 class ScreenshotResult(TypedDict):
@@ -34,6 +35,7 @@ class DirectoryScanResult(TypedDict):
     response_time: Optional[float]
     response_headers: Optional[Dict[str, str]]
     response_body: Optional[str]
+    is_meaningful: Optional[bool]  # False for 301/403/error pages
 
 
 class NucleiResult(TypedDict):

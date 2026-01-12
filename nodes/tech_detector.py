@@ -286,31 +286,259 @@ def detect_from_headers(url: str, timeout: int = 10) -> TechResult:
 
 
 def detect_with_wappalyzer(url: str) -> List[Dict[str, Any]]:
-    """Use python-Wappalyzer for technology detection"""
+    """
+    Use Selenium + Wappalyzer JSON fingerprints for technology detection.
+    Loads the page with headless Chrome and analyzes DOM, scripts, meta tags, etc.
+    """
     technologies = []
     
     try:
-        from Wappalyzer import Wappalyzer, WebPage
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.chrome.service import Service
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        import json
+        from pathlib import Path
         
-        wappalyzer = Wappalyzer.latest()
-        webpage = WebPage.new_from_url(url, verify=False, timeout=15)
-        detected = wappalyzer.analyze_with_versions_and_categories(webpage)
+        # Load Wappalyzer technologies and categories
+        wappalyzer_dir = Path(__file__).parent.parent / "data" / "wappalyzer"
+        categories = {}
+        tech_patterns = {}
         
-        for tech_name, details in detected.items():
-            tech_info = {
-                'name': tech_name,
-                'category': ', '.join(details.get('categories', ['Unknown'])),
-                'version': list(details.get('versions', [None]))[0] if details.get('versions') else None,
-                'source': 'wappalyzer'
-            }
-            technologies.append(tech_info)
+        # Load categories
+        categories_file = wappalyzer_dir / "categories.json"
+        if categories_file.exists():
+            with open(categories_file, 'r', encoding='utf-8') as f:
+                categories = json.load(f)
+        
+        # Load all technology files (a.json, b.json, ... z.json)
+        for tech_file in wappalyzer_dir.glob("*.json"):
+            if tech_file.name == "categories.json":
+                continue
+            try:
+                with open(tech_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    tech_patterns.update(data)
+            except:
+                pass
+        
+        if not tech_patterns:
+            return technologies
+        
+        # Setup headless Chrome
+        chrome_options = Options()
+        chrome_options.add_argument("--headless=new")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--window-size=1920,1080")
+        chrome_options.add_argument("--ignore-certificate-errors")
+        chrome_options.add_argument("--disable-web-security")
+        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        
+        driver = None
+        try:
+            driver = webdriver.Chrome(options=chrome_options)
+            driver.set_page_load_timeout(30)
+            driver.get(url)
             
+            # Wait for page to load
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+            
+            # Collect page data
+            page_data = {
+                'url': url,
+                'html': driver.page_source[:100000],  # Limit HTML size
+                'scripts': [],
+                'meta': {},
+                'headers': {},
+                'cookies': {},
+            }
+            
+            # Get all script sources
+            scripts = driver.find_elements(By.TAG_NAME, "script")
+            for script in scripts:
+                src = script.get_attribute("src")
+                if src:
+                    page_data['scripts'].append(src)
+                else:
+                    # Inline script content
+                    content = script.get_attribute("innerHTML") or ""
+                    if content:
+                        page_data['scripts'].append(content[:1000])  # First 1000 chars
+            
+            # Get meta tags
+            metas = driver.find_elements(By.TAG_NAME, "meta")
+            for meta in metas:
+                name = meta.get_attribute("name") or meta.get_attribute("property") or ""
+                content = meta.get_attribute("content") or ""
+                if name and content:
+                    page_data['meta'][name.lower()] = content
+            
+            # Get cookies
+            for cookie in driver.get_cookies():
+                page_data['cookies'][cookie['name']] = cookie['value']
+            
+            # Analyze with Wappalyzer patterns
+            detected = analyze_with_patterns(page_data, tech_patterns, categories)
+            technologies.extend(detected)
+            
+        finally:
+            if driver:
+                try:
+                    driver.quit()
+                except:
+                    pass
+                    
     except ImportError:
+        # Selenium not installed, skip
         pass
     except Exception as e:
         pass
     
     return technologies
+
+
+def analyze_with_patterns(page_data: Dict, tech_patterns: Dict, categories: Dict) -> List[Dict[str, Any]]:
+    """
+    Analyze page data against Wappalyzer technology patterns.
+    """
+    import re
+    detected = []
+    html = page_data.get('html', '')
+    scripts = page_data.get('scripts', [])
+    meta = page_data.get('meta', {})
+    cookies = page_data.get('cookies', {})
+    
+    scripts_combined = ' '.join(str(s) for s in scripts)
+    
+    for tech_name, tech_data in tech_patterns.items():
+        if not isinstance(tech_data, dict):
+            continue
+            
+        matched = False
+        version = None
+        
+        # Check HTML patterns
+        html_patterns = tech_data.get('html', [])
+        if isinstance(html_patterns, str):
+            html_patterns = [html_patterns]
+        for pattern in html_patterns:
+            try:
+                pattern_str, version_group = parse_pattern(pattern)
+                if re.search(pattern_str, html, re.IGNORECASE):
+                    matched = True
+                    if version_group:
+                        match = re.search(pattern_str, html, re.IGNORECASE)
+                        if match and match.lastindex:
+                            version = match.group(1)
+                    break
+            except:
+                pass
+        
+        # Check script patterns
+        if not matched:
+            script_patterns = tech_data.get('scriptSrc', [])
+            if isinstance(script_patterns, str):
+                script_patterns = [script_patterns]
+            for pattern in script_patterns:
+                try:
+                    pattern_str, version_group = parse_pattern(pattern)
+                    if re.search(pattern_str, scripts_combined, re.IGNORECASE):
+                        matched = True
+                        break
+                except:
+                    pass
+        
+        # Check meta patterns
+        if not matched:
+            meta_patterns = tech_data.get('meta', {})
+            if isinstance(meta_patterns, dict):
+                for meta_name, pattern in meta_patterns.items():
+                    meta_value = meta.get(meta_name.lower(), '')
+                    if meta_value:
+                        try:
+                            pattern_str, version_group = parse_pattern(pattern)
+                            if re.search(pattern_str, meta_value, re.IGNORECASE):
+                                matched = True
+                                break
+                        except:
+                            pass
+        
+        # Check cookie patterns
+        if not matched:
+            cookie_patterns = tech_data.get('cookies', {})
+            if isinstance(cookie_patterns, dict):
+                for cookie_name, pattern in cookie_patterns.items():
+                    if cookie_name in cookies:
+                        try:
+                            if pattern == "":
+                                matched = True
+                            else:
+                                pattern_str, version_group = parse_pattern(pattern)
+                                if re.search(pattern_str, cookies[cookie_name], re.IGNORECASE):
+                                    matched = True
+                            break
+                        except:
+                            pass
+        
+        # Check JavaScript variables (in inline scripts)
+        if not matched:
+            js_patterns = tech_data.get('js', {})
+            if isinstance(js_patterns, dict):
+                for js_var, pattern in js_patterns.items():
+                    # Simple check - look for variable name in scripts
+                    if js_var in scripts_combined:
+                        matched = True
+                        break
+        
+        if matched:
+            # Get category
+            cat_ids = tech_data.get('cats', [])
+            cat_names = []
+            for cat_id in cat_ids:
+                cat_info = categories.get(str(cat_id), {})
+                cat_name = cat_info.get('name', 'Unknown')
+                cat_names.append(cat_name)
+            
+            detected.append({
+                'name': tech_name,
+                'category': ', '.join(cat_names) if cat_names else 'Unknown',
+                'version': version,
+                'source': 'wappalyzer-selenium'
+            })
+    
+    return detected
+
+
+def parse_pattern(pattern: str) -> tuple:
+    """
+    Parse Wappalyzer pattern format.
+    Patterns can have modifiers like \\;version:\\1
+    Returns (regex_pattern, has_version_group)
+    """
+    if not pattern:
+        return ('', False)
+    
+    # Split by \; to separate pattern from modifiers
+    parts = pattern.split('\\;')
+    regex_pattern = parts[0]
+    
+    has_version = False
+    if len(parts) > 1:
+        for modifier in parts[1:]:
+            if modifier.startswith('version:'):
+                has_version = True
+    
+    # Escape special regex chars that Wappalyzer uses differently
+    # Wappalyzer uses \; for literal semicolon, etc.
+    regex_pattern = regex_pattern.replace('\\;', ';')
+    
+    return (regex_pattern, has_version)
 
 
 def detect_with_webtech(url: str) -> List[Dict[str, Any]]:

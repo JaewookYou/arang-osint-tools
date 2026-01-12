@@ -262,6 +262,61 @@ def fetch_responses_for_paths(discovered_paths: List[DirectoryScanResult]) -> Li
     return discovered_paths
 
 
+def is_meaningful_endpoint(result: DirectoryScanResult) -> bool:
+    """
+    Determine if an endpoint is meaningful (not a redirect/error page).
+    Returns True if the endpoint should be shown in filtered view.
+    """
+    status = result.get('status_code', 0)
+    body = result.get('response_body', '') or ''
+    content_type = result.get('content_type', '') or ''
+    
+    # Filter out 301/302 redirects
+    if status in [301, 302, 307, 308]:
+        return False
+    
+    # Filter out 403 Forbidden (usually directory listing blocked)
+    if status == 403:
+        # Keep if it has substantial content (might be interesting)
+        if len(body) < 500:
+            return False
+    
+    # Filter out 401 Unauthorized
+    if status == 401:
+        return False
+    
+    # Check for error page patterns in body
+    body_lower = body.lower()
+    error_patterns = [
+        'page not found',
+        '404 not found',
+        'file not found',
+        'error 404',
+        'not found</title>',
+        'page does not exist',
+        'the requested url',
+        'was not found on this server',
+        'doesn\'t exist',
+        'does not exist',
+        'sorry, we couldn\'t find',
+        'this page could not be found',
+        'nothing found',
+        'error page',
+        'default page',
+    ]
+    
+    for pattern in error_patterns:
+        if pattern in body_lower:
+            return False
+    
+    # If 200 but very small content, might be a redirect or placeholder
+    if status == 200 and len(body) < 100:
+        # Check if it's just a redirect page
+        if 'location' in str(result.get('response_headers', {})).lower():
+            return False
+    
+    return True
+
 
 def run(state: ScanState) -> dict:
     """
@@ -358,9 +413,19 @@ def run(state: ScanState) -> dict:
         logs.append("[DirectoryScanner] Fetching HTTP responses for discovered paths...")
         discovered_paths = fetch_responses_for_paths(discovered_paths)
         logs.append("[DirectoryScanner] Response fetching complete")
+        
+        # Apply meaningfulness filter
+        meaningful_count = 0
+        for path in discovered_paths:
+            path['is_meaningful'] = is_meaningful_endpoint(path)
+            if path['is_meaningful']:
+                meaningful_count += 1
+        
+        logs.append(f"[DirectoryScanner] Meaningful endpoints: {meaningful_count}/{len(discovered_paths)}")
     
     return {
         'discovered_paths': discovered_paths,
         'errors': errors,
         'logs': logs
     }
+

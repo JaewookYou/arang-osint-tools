@@ -159,7 +159,7 @@ def filter_cve_by_product(cve: Dict, target_product: str) -> bool:
 # ============================================
 # NVD API Search
 # ============================================
-def search_nvd(product: str, version: Optional[str] = None, max_results: int = 15) -> List[Dict[str, Any]]:
+def search_nvd(product: str, version: Optional[str] = None, max_results: int = 30) -> List[Dict[str, Any]]:
     """Search NVD using keyword matching"""
     global _last_nvd_request
     
@@ -183,10 +183,8 @@ def search_nvd(product: str, version: Optional[str] = None, max_results: int = 1
         else:
             keyword = product
         
-        if version:
-            keyword = f"{keyword} {version}"
-        
-        # Search parameters
+        # Search WITHOUT version first to get more results
+        # Then filter by version later
         search_params = {
             'keywordSearch': keyword,
             'limit': max_results,
@@ -224,6 +222,32 @@ def search_nvd(product: str, version: Optional[str] = None, max_results: int = 1
                         description = desc.value[:500]
                         break
             
+            # Check if version is affected (if version specified)
+            version_affected = True
+            if version and description:
+                # Check for version patterns in description
+                desc_lower = description.lower()
+                target_version = parse_version(version)
+                
+                # Look for "before X.Y.Z" or "< X.Y.Z" patterns
+                fixed_patterns = [
+                    r'before\s+(\d+\.\d+(?:\.\d+)?)',
+                    r'prior\s+to\s+(\d+\.\d+(?:\.\d+)?)',
+                    r'<\s*(\d+\.\d+(?:\.\d+)?)',
+                    r'through\s+(\d+\.\d+(?:\.\d+)?)',
+                ]
+                
+                for pattern in fixed_patterns:
+                    match = re.search(pattern, desc_lower)
+                    if match:
+                        fixed_version = parse_version(match.group(1))
+                        if target_version >= fixed_version:
+                            version_affected = False
+                            break
+            
+            if not version_affected:
+                continue
+            
             # Published date
             published = str(cve.published)[:10] if hasattr(cve, 'published') else ""
             
@@ -256,123 +280,135 @@ def search_osv(product: str, version: Optional[str] = None) -> List[Dict[str, An
     """Search Google's OSV database with proper CVSS parsing"""
     cves = []
     
-    # Map product names for OSV
-    osv_package_names = {
-        'apache': 'apache-http-server',
-        'nginx': 'nginx',
-        'php': 'php',
+    # Map product names for OSV - search multiple ecosystems
+    osv_queries = {
+        'apache': [
+            {'name': 'apache2', 'ecosystem': 'Debian'},
+            {'name': 'apache-http-server', 'ecosystem': 'OSS-Fuzz'},
+        ],
+        'nginx': [
+            {'name': 'nginx', 'ecosystem': 'Debian'},
+            {'name': 'nginx', 'ecosystem': 'Alpine'},
+        ],
+        'php': [
+            {'name': 'php', 'ecosystem': 'Debian'},
+        ],
+        'openssl': [
+            {'name': 'openssl', 'ecosystem': 'Debian'},
+        ],
     }
     
-    package_name = osv_package_names.get(product.lower(), product.lower())
+    # Get queries for this product, or use default
+    queries = osv_queries.get(product.lower(), [
+        {'name': product.lower(), 'ecosystem': 'Debian'}
+    ])
     
-    try:
-        # OSV API endpoint
-        url = "https://api.osv.dev/v1/query"
-        
-        # Build package query
-        payload = {
-            "package": {
-                "name": package_name,
-                "ecosystem": "OSS-Fuzz" if product.lower() in ['apache', 'nginx'] else "PyPI"
-            }
-        }
-        
-        if version:
-            payload["version"] = version
-        
-        response = requests.post(url, json=payload, timeout=10)
-        
-        if response.status_code == 200:
-            data = response.json()
+    for query_params in queries:
+        try:
+            # OSV API endpoint
+            url = "https://api.osv.dev/v1/query"
             
-            for vuln in data.get('vulns', []):
-                vuln_id = vuln.get('id', '')
+            # Build package query
+            payload = {
+                "package": query_params
+            }
+            
+            if version:
+                payload["version"] = version
+            
+            response = requests.post(url, json=payload, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
                 
-                # Skip non-CVE entries unless critical
-                if not vuln_id.startswith('CVE-') and 'MGASA' not in vuln_id:
-                    # Get CVE alias if available
-                    cve_id = vuln_id
-                    for alias in vuln.get('aliases', []):
-                        if alias.startswith('CVE-'):
-                            cve_id = alias
-                            break
-                else:
-                    cve_id = vuln_id
-                
-                # Parse CVSS from database_specific or severity
-                cvss_score = None
-                severity = 'unknown'
-                
-                # Try database_specific first
-                db_specific = vuln.get('database_specific', {})
-                if 'severity' in db_specific:
-                    sev_str = db_specific['severity'].upper()
-                    severity = sev_str.lower() if sev_str in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] else 'unknown'
-                
-                # Try severity array
-                for sev in vuln.get('severity', []):
-                    sev_type = sev.get('type', '')
-                    sev_score = sev.get('score', '')
+                for vuln in data.get('vulns', []):
+                    vuln_id = vuln.get('id', '')
                     
-                    if sev_type == 'CVSS_V3':
-                        # Parse CVSS vector string: "CVSS:3.1/AV:N/AC:L/..."
-                        if sev_score.startswith('CVSS:'):
-                            # Extract base score from vector if available
-                            # Try to find numeric score
-                            pass
-                    elif sev_type == 'CVSS_V2':
-                        try:
-                            cvss_score = float(sev_score)
-                            severity = normalize_severity(cvss_score)
-                        except:
-                            pass
-                
-                # Try to get score from references
-                for ref in vuln.get('references', []):
-                    if 'nvd.nist.gov' in ref.get('url', ''):
-                        # Could fetch from NVD, but skip for now
-                        pass
-                
-                # Check version affected
-                affected = vuln.get('affected', [])
-                version_affected = True
-                if version and affected:
-                    for aff in affected:
-                        ranges = aff.get('ranges', [])
-                        if ranges:
-                            version_affected = is_version_affected(version, ranges)
-                            if not version_affected:
+                    # Skip non-CVE entries unless critical
+                    if not vuln_id.startswith('CVE-') and 'MGASA' not in vuln_id:
+                        # Get CVE alias if available
+                        cve_id = vuln_id
+                        for alias in vuln.get('aliases', []):
+                            if alias.startswith('CVE-'):
+                                cve_id = alias
                                 break
-                
-                if not version_affected:
-                    continue
-                
-                # Get description
-                description = vuln.get('summary', '') or ''
-                if not description:
-                    description = (vuln.get('details', '') or '')[:500]
-                
-                # Published date
-                published = vuln.get('published', '')[:10] if vuln.get('published') else ''
-                
-                cve_entry = {
-                    'cve_id': cve_id,
-                    'description': description,
-                    'cvss_score': cvss_score,
-                    'severity': severity,
-                    'published': published,
-                    'url': f"https://osv.dev/vulnerability/{vuln_id}",
-                    'product': product,
-                    'version': version,
-                    'source': 'OSV'
-                }
-                
-                # Filter by product
-                if filter_cve_by_product(cve_entry, product):
-                    cves.append(cve_entry)
-                
-    except Exception as e:
-        pass
+                    else:
+                        cve_id = vuln_id
+                    
+                    # Parse CVSS from database_specific or severity
+                    cvss_score = None
+                    severity = 'unknown'
+                    
+                    # Try database_specific first
+                    db_specific = vuln.get('database_specific', {})
+                    if 'severity' in db_specific:
+                        sev_str = db_specific['severity'].upper()
+                        severity = sev_str.lower() if sev_str in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] else 'unknown'
+                    
+                    # Try severity array
+                    for sev in vuln.get('severity', []):
+                        sev_type = sev.get('type', '')
+                        sev_score = sev.get('score', '')
+                        
+                        if sev_type == 'CVSS_V3':
+                            # Parse CVSS vector string: "CVSS:3.1/AV:N/AC:L/..."
+                            if sev_score.startswith('CVSS:'):
+                                # Extract base score from vector if available
+                                # Try to find numeric score
+                                pass
+                        elif sev_type == 'CVSS_V2':
+                            try:
+                                cvss_score = float(sev_score)
+                                severity = normalize_severity(cvss_score)
+                            except:
+                                pass
+                    
+                    # Try to get score from references
+                    for ref in vuln.get('references', []):
+                        if 'nvd.nist.gov' in ref.get('url', ''):
+                            # Could fetch from NVD, but skip for now
+                            pass
+                    
+                    # Check version affected
+                    affected = vuln.get('affected', [])
+                    version_affected = True
+                    if version and affected:
+                        for aff in affected:
+                            ranges = aff.get('ranges', [])
+                            if ranges:
+                                version_affected = is_version_affected(version, ranges)
+                                if not version_affected:
+                                    break
+                    
+                    if not version_affected:
+                        continue
+                    
+                    # Get description
+                    description = vuln.get('summary', '') or ''
+                    if not description:
+                        description = (vuln.get('details', '') or '')[:500]
+                    
+                    # Published date
+                    published = vuln.get('published', '')[:10] if vuln.get('published') else ''
+                    
+                    cve_entry = {
+                        'cve_id': cve_id,
+                        'description': description,
+                        'cvss_score': cvss_score,
+                        'severity': severity,
+                        'published': published,
+                        'url': f"https://osv.dev/vulnerability/{vuln_id}",
+                        'product': product,
+                        'version': version,
+                        'source': 'OSV'
+                    }
+                    
+                    # Filter by product
+                    if filter_cve_by_product(cve_entry, product):
+                        cves.append(cve_entry)
+                        
+        except Exception as e:
+            pass
     
     return cves
 

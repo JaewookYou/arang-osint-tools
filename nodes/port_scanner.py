@@ -95,6 +95,34 @@ def is_http_response(banner: bytes) -> bool:
     return False
 
 
+def format_binary_preview(data: bytes, max_length: int = 1000) -> str:
+    """
+    Format binary data for display.
+    Non-ASCII bytes are displayed as <XX> where XX is the hex value.
+    """
+    if not data:
+        return ""
+    
+    result = []
+    for i, byte in enumerate(data[:max_length]):
+        if 32 <= byte < 127:  # Printable ASCII
+            result.append(chr(byte))
+        elif byte == 10:  # Newline
+            result.append('\n')
+        elif byte == 13:  # Carriage return
+            result.append('')  # Skip CR
+        elif byte == 9:  # Tab
+            result.append('\t')
+        else:
+            result.append(f'<{byte:02X}>')
+    
+    preview = ''.join(result)
+    if len(data) > max_length:
+        preview += f'\n... [{len(data)} bytes total]'
+    
+    return preview
+
+
 def try_https_on_port(host: str, port: int) -> Tuple[bool, bool]:
     """
     Try HTTPS connection on any port.
@@ -122,7 +150,8 @@ def scan_port(host: str, port: int) -> Optional[PortScanResult]:
                 host=host,
                 port=port,
                 service='https',
-                is_http=True
+                is_http=True,
+                response_preview=format_binary_preview(banner)
             )
         # Fallback to plain TCP
         success, banner = tcp_connect(host, port)
@@ -132,7 +161,8 @@ def scan_port(host: str, port: int) -> Optional[PortScanResult]:
                 host=host,
                 port=port,
                 service='http' if is_http else 'unknown',
-                is_http=is_http
+                is_http=is_http,
+                response_preview=format_binary_preview(banner)
             )
     else:
         # Try plain TCP first
@@ -143,30 +173,33 @@ def scan_port(host: str, port: int) -> Optional[PortScanResult]:
             # If we got HTTP response on non-standard port, check if it might be HTTPS
             if not is_http and port not in [80, 8080, 8000, 8888]:
                 # Try HTTPS as well
-                https_success, _ = check_https(host, port)
+                https_success, https_banner = check_https(host, port)
                 if https_success:
                     return PortScanResult(
                         host=host,
                         port=port,
                         service='https',
-                        is_http=True
+                        is_http=True,
+                        response_preview=format_binary_preview(https_banner)
                     )
             
             return PortScanResult(
                 host=host,
                 port=port,
                 service='http' if is_http else 'unknown',
-                is_http=is_http
+                is_http=is_http,
+                response_preview=format_binary_preview(banner)
             )
         else:
             # Port didn't respond to TCP, try HTTPS anyway (some servers only respond to SSL)
-            https_success, _ = check_https(host, port)
+            https_success, https_banner = check_https(host, port)
             if https_success:
                 return PortScanResult(
                     host=host,
                     port=port,
                     service='https',
-                    is_http=True
+                    is_http=True,
+                    response_preview=format_binary_preview(https_banner)
                 )
     
     return None
@@ -251,7 +284,8 @@ def run_nmap(hosts: List[str]) -> List[PortScanResult]:
                             host=display_host,  # Use domain if available
                             port=port,
                             service=service,
-                            is_http=is_http
+                            is_http=is_http,
+                            response_preview=None  # nmap doesn't capture response
                         ))
         except ET.ParseError:
             pass
@@ -328,6 +362,11 @@ def run(state: ScanState) -> dict:
             logs.append("[PortScanner] Nmap returned no results, falling back to multithreaded TCP scan")
             open_ports = run_multithreaded_scan(alive_hosts)
             logs.append(f"[PortScanner] TCP scan found {len(open_ports)} open ports")
+        else:
+            # Fetch responses for nmap results (nmap doesn't capture responses)
+            logs.append("[PortScanner] Fetching responses for nmap-discovered ports...")
+            open_ports = fetch_port_responses(open_ports)
+            logs.append("[PortScanner] Response fetching complete")
             
     except FileNotFoundError:
         logs.append("[PortScanner] Nmap not found, falling back to multithreaded TCP scan")
@@ -363,3 +402,51 @@ def run(state: ScanState) -> dict:
         'errors': errors,
         'logs': logs
     }
+
+
+def fetch_port_responses(ports: List[PortScanResult]) -> List[PortScanResult]:
+    """
+    Fetch HTTP responses for open ports that don't have response data.
+    Used after nmap scan which doesn't capture responses.
+    """
+    https_ports = {443, 8443, 9443, 4443, 8444}
+    
+    def fetch_single_response(port_result: PortScanResult) -> PortScanResult:
+        if port_result.get('response_preview'):
+            return port_result  # Already has response
+        
+        host = port_result['host']
+        port = port_result['port']
+        service = port_result.get('service', 'unknown')
+        
+        # Determine if we should try HTTPS
+        is_https = service == 'https' or port in https_ports
+        
+        banner = b''
+        if is_https:
+            success, banner = check_https(host, port)
+            if not success:
+                # Try plain TCP as fallback
+                success, banner = tcp_connect(host, port)
+        else:
+            success, banner = tcp_connect(host, port)
+            if not success and port not in [80, 8080, 8000]:
+                # Try HTTPS as fallback for non-standard ports
+                success, banner = check_https(host, port)
+        
+        # Update result with response
+        port_result['response_preview'] = format_binary_preview(banner) if banner else None
+        return port_result
+    
+    # Fetch responses in parallel
+    with ThreadPoolExecutor(max_workers=min(len(ports), 20)) as executor:
+        futures = {executor.submit(fetch_single_response, p): p for p in ports}
+        results = []
+        for future in as_completed(futures):
+            try:
+                results.append(future.result())
+            except:
+                results.append(futures[future])
+    
+    return results
+
